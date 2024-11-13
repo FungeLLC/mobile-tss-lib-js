@@ -5,7 +5,7 @@ import { Round1 } from './Round1';
 import { Round2 } from './Round2';
 import { Round3 } from './Round3';
 import { BaseParty } from './BaseParty';
-import { TssError } from './TSSError';
+import { TssError } from './TssError';
 
 class LocalParty {
     private baseParty: BaseParty;

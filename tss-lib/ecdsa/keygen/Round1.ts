@@ -3,7 +3,7 @@ import BN from 'bn.js';
 import { Commitment, Shares } from './interfaces';
 import { generateCommitment, generateShares } from './utils';
 import { ParsedMessage } from './interfaces';
-import { TssError } from './TSSError';
+import { TssError } from './TssError';
 
 class Round1 implements Round {
     constructor(

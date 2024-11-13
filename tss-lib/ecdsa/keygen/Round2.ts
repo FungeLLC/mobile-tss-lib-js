@@ -1,5 +1,5 @@
 import { KeygenParams, LocalPartySaveData, LocalTempData, MessageFromTss, Round } from './interfaces';
-import { TssError } from './TSSError';
+import { TssError } from './TssError';
 import { ParsedMessage } from './interfaces';
 
 class Round2 implements Round {

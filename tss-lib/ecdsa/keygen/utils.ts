@@ -67,4 +67,3 @@ export function BaseUpdate(party: any, msg: ParsedMessage, taskName: string): [b
 
 export function WrapError(error: Error): TssError {
     return new TssError(error.message);
-}
