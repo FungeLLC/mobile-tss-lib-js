@@ -1,5 +1,5 @@
 class LocalPreParams {
-	private proof: boolean;
+	proof: boolean;
 
 	constructor(proof: boolean) {
 		this.proof = proof;
