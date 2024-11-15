@@ -5,6 +5,7 @@ import { ProofFac } from '../../crypto/FACProof';
 import { ProofMod } from '../../crypto/MODProof';
 import { ECPoint } from '../../crypto/ECPoint';
 
+
 class LocalPartySaveData {
     public localPreParams?: LocalPreParams;
     public combinedShares: Shares;
