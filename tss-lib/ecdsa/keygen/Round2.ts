@@ -1,13 +1,14 @@
 import { KeygenParams, MessageFromTss, Round, ParsedMessage, PartyID } from './interfaces';
 import { Commitment, Shares } from './interfaces';
 import { ProofFac } from '../../crypto/FACProof';
-import { ModProof } from '../../crypto/MODProof';
-import { KGRound1Message } from './KGRound1Message';
+import { ProofMod } from '../../crypto/MODProof';
+import { KGRound1Message } from './Round1';
 import { KGRound2Message1 } from './KGRound2Message1';
 import { KGRound2Message2 } from './KGRound2Message2';
 import { TssError } from './TssError';
 import { LocalPartySaveData } from './LocalPartySaveData';
 import { LocalTempData } from './LocalTempData';
+import BN from 'bn.js';
 
 
 class Round2 implements Round {
@@ -19,7 +20,7 @@ class Round2 implements Round {
         private end?: (data: LocalPartySaveData) => void
     ) { }
 
-    public start(): TssError | null {
+    public async start(): Promise<TssError | null> {
         try {
             if (this.temp.started) {
                 return new TssError('round already started');
@@ -96,7 +97,7 @@ class Round2 implements Round {
                 this.data.NTildej[j] = NTildej;
                 this.data.H1j[j] = H1j;
                 this.data.H2j[j] = H2j;
-                this.temp.KGCs[j] = KGC;
+                this.temp.KGCs[j] = new Commitment(new BN(KGC));
             }
 
             // P2P send share ij to Pj
@@ -119,9 +120,9 @@ class Round2 implements Round {
             }
 
             // Broadcast de-commitments of Shamir poly*G
-            let modProof: ModProof;
+            let modProof: ProofMod;
             if (!this.params.noProofMod) {
-                modProof = ModProof.newProof(contextI, this.data.paillierSK.n, this.data.paillierSK.p, this.data.paillierSK.q, this.params.rand);
+                modProof = await ProofMod.newProof(contextI, this.data.paillierSK.n, this.data.paillierSK.p, this.data.paillierSK.q, this.params.rand);
             }
             const r2msg2 = new KGRound2Message2(this.params.partyID(), this.temp.deCommitPolyG);
             this.temp.kgRound2Message2s[i] = r2msg2;
@@ -183,7 +184,9 @@ class Round2 implements Round {
         }
 
         // Move to the next round
-        this.end(this.data);
+        if (this.end) {
+            this.end(this.data);
+        }
     }
 }
 

@@ -11,6 +11,34 @@ export class Share {
 		public share: BN    // Sigma i
 	) { }
 	
+
+
+	public verify(curve: Curve, threshold: number, points: ECPoint[]): boolean {
+
+		// Verify that the share lies on the polynomial defined by the points
+
+		let lhs = curve.g.scalarMult(this.share);
+
+		let rhs = points[0];
+
+		let t = this.id;
+
+
+
+		for (let i = 1; i <= threshold; i++) {
+
+			rhs = rhs.add(points[i].scalarMult(t));
+
+			t = t.mul(this.id).mod(curve.n);
+
+		}
+
+
+
+		return lhs.equals(rhs);
+
+	}
+
 }
 
 export type Vs = ECPoint[]; // v0..vt
