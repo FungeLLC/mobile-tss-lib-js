@@ -13,7 +13,7 @@ export class Share {
 	
 
 
-	public verify(curve: Curve, threshold: number, points: ECPoint[]): boolean {
+	public verify(curve: EC, threshold: number, points: ECPoint[]): boolean {
 
 		// Verify that the share lies on the polynomial defined by the points
 
