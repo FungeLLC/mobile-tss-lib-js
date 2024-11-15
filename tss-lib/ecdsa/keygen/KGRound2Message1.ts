@@ -1,6 +1,6 @@
 import { ParsedMessage, PartyID } from './interfaces';
 import BN from 'bn.js';
-import { ProofFac } from '../../crypto/facproof';
+import { ProofFac } from '../../crypto/FACProof';
 
 class KGRound2Message1 implements ParsedMessage {
     public content: any;

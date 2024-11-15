@@ -1,121 +1,53 @@
 import BN from 'bn.js';
-import crypto from 'crypto';
 import ModInt  from '../common/ModInt';
-import { SHA512_256i_TAGGED, RejectionSample } from '../common/Hash';
+import { SHA512_256i_TAGGED } from '../common/Hash';
+import { RejectionSample } from '../common/Random';
 import { getRandomQuadraticNonResidue } from '../common/Random';
+import { probablyPrime } from '../common/SafePrime';
 
 const Iterations = 80;
 const ProofModBytesParts = Iterations * 2 + 3;
+const one = new BN(1);
 
-export class ModProof {
-	private readonly w: BN;
-	private readonly x: BN[];
-	private readonly a: BN;
-	private readonly b: BN;
-	private readonly z: BN[];
-
-	constructor(w: BN, x: BN[], a: BN, b: BN, z: BN[]) {
-		this.w = w;
-		this.x = x;
-		this.a = a;
-		this.b = b;
-		this.z = z;
+export class ProofMod {
+	constructor(
+		public W: BN,
+		public X: BN[],
+		public A: BN,
+		public B: BN,
+		public Z: BN[]
+	) {
+		if (X.length !== Iterations || Z.length !== Iterations) {
+			throw new Error(`Proof requires ${Iterations} values`);
+		}
 	}
 
-	public getProof(): { w: BN; x: BN[]; a: BN; b: BN; z: BN[] } {
-		return {
-			w: this.w,
-			x: this.x,
-			a: this.a,
-			b: this.b,
-			z: this.z
-		};
-	}
+	static async newProof(session: Buffer, N: BN, P: BN, Q: BN): Promise<ProofMod> {
+		const Phi = P.sub(one).mul(Q.sub(one));
+		// Fig 16.1
+		const W = getRandomQuadraticNonResidue(N);
 
-	public verify(session: Buffer, N: BN): boolean {
-		if (!this.validateBasic()) {
-			return false;
-		}
-		if (isQuadraticResidue(this.w, N)) {
-			return false;
-		}
-		if (this.w.isZero() || this.w.gte(N)) {
-			return false;
-		}
-		for (let i = 0; i < Iterations; i++) {
-			if (this.z[i].isZero() || this.z[i].gte(N)) {
-				return false;
-			}
-			if (this.x[i].isZero() || this.x[i].gte(N)) {
-				return false;
-			}
-		}
-		if (this.a.bitLength() !== Iterations + 1) {
-			return false;
-		}
-		if (this.b.bitLength() !== Iterations + 1) {
-			return false;
-		}
-
-		const modN = new ModInt(N);
-		const Y: BN[] = new Array(Iterations);
-		for (let i = 0; i < Iterations; i++) {
-			const ei = SHA512_256i_TAGGED(session, this.w, N, ...Y.slice(0, i));
-			Y[i] = RejectionSample(N, ei);
-		}
-
-		const chs = new Array(Iterations * 2).fill(false);
-		for (let i = 0; i < Iterations; i++) {
-			const left = modN.exp(this.z[i], N);
-			if (!left.eq(Y[i])) {
-				return false;
-			}
-			chs[i] = true;
-
-			const a = this.a.testn(i) ? 1 : 0;
-			const b = this.b.testn(i) ? 1 : 0;
-			if (a !== 0 && a !== 1) {
-				return false;
-			}
-			if (b !== 0 && b !== 1) {
-				return false;
-			}
-			const left2 = modN.exp(this.x[i], new BN(4));
-			let right = Y[i];
-			if (a > 0) {
-				right = modN.mul(new BN(-1), right);
-			}
-			if (b > 0) {
-				right = modN.mul(this.w, right);
-			}
-			if (!left2.eq(right)) {
-				return false;
-			}
-			chs[Iterations + i] = true;
-		}
-
-		return chs.every(ch => ch);
-	}
-
-	public static newProof(session: Buffer, N: BN, P: BN, Q: BN, rand: crypto.RandomSource): ModProof {
-		const Phi = P.sub(new BN(1)).mul(Q.sub(new BN(1)));
-		const W = getRandomQuadraticNonResidue(rand, N);
-
+		// Fig 16.2
 		const Y: BN[] = new Array(Iterations);
 		for (let i = 0; i < Iterations; i++) {
 			const ei = SHA512_256i_TAGGED(session, W, N, ...Y.slice(0, i));
 			Y[i] = RejectionSample(N, ei);
 		}
 
+		// Fig 16.3
 		const modN = new ModInt(N);
 		const modPhi = new ModInt(Phi);
 		const invN = N.invm(Phi);
 		const X: BN[] = new Array(Iterations);
-		const A = new BN(1).shln(Iterations);
-		const B = new BN(1).shln(Iterations);
+		// Fix bitLen of A and B
+		const A = one.shln(Iterations);
+		const B = one.shln(Iterations);
 		const Z: BN[] = new Array(Iterations);
 
-		const expo = Phi.add(new BN(4)).shrn(3).mul(Phi.add(new BN(4)).shrn(3));
+		// for fourth-root
+		let expo = Phi.add(new BN(4));
+		expo = expo.shrn(3);
+		expo = new BN(modPhi.mul(expo, expo).toString());
 
 		for (let i = 0; i < Iterations; i++) {
 			for (let j = 0; j < 4; j++) {
@@ -123,57 +55,150 @@ export class ModProof {
 				const b = (j & 2) >> 1;
 				let Yi = Y[i].clone();
 				if (a > 0) {
-					Yi = modN.mul(new BN(-1), Yi);
+					Yi = new BN(modN.mul(new BN(-1), Yi).toString());
 				}
 				if (b > 0) {
-					Yi = modN.mul(W, Yi);
+					Yi = new BN(modN.mul(W, Yi).toString());
 				}
 				if (isQuadraticResidue(Yi, P) && isQuadraticResidue(Yi, Q)) {
 					const Xi = modN.exp(Yi, expo);
 					const Zi = modN.exp(Y[i], invN);
-					X[i] = Xi;
-					Z[i] = Zi;
-					A.setn(i, a);
-					B.setn(i, b);
+					X[i] = new BN(Xi.toString());
+					Z[i] = new BN(Zi.toString());
+					A.setn(i, a as 0 | 1);
+					B.setn(i, b as 0 | 1);
 					break;
 				}
 			}
 		}
 
-		return new ModProof(W, X, A, B, Z);
+		return new ProofMod(W, X, A, B, Z);
 	}
 
-	public validateBasic(): boolean {
-		if (!this.w) {
+	static fromBytes(bzs: Buffer[]): ProofMod {
+		if (bzs.length !== ProofModBytesParts) {
+			throw new Error(`Expected ${ProofModBytesParts} byte parts to construct ProofMod`);
+		}
+
+		const bis = bzs.map(bz => new BN(bz));
+		const X = bis.slice(1, Iterations + 1);
+		const Z = bis.slice(Iterations + 3);
+
+		return new ProofMod(
+			bis[0],
+			X,
+			bis[Iterations + 1],
+			bis[Iterations + 2],
+			Z
+		);
+	}
+
+	async verify(session: Buffer, N: BN): Promise<boolean> {
+		if (!this.validateBasic()) {
 			return false;
 		}
-		for (let i = 0; i < Iterations; i++) {
-			if (!this.x[i] || !this.z[i]) {
+
+		if (isQuadraticResidue(this.W, N)) {
+			return false;
+		}
+
+		if (this.W.ltn(1) || this.W.gte(N)) {
+			return false;
+		}
+
+		for (const z of this.Z) {
+			if (z.ltn(1) || z.gte(N)) {
 				return false;
 			}
 		}
-		if (!this.a || !this.b) {
+
+		for (const x of this.X) {
+			if (x.ltn(1) || x.gte(N)) {
+				return false;
+			}
+		}
+
+		if (this.A.bitLength() !== Iterations + 1) {
 			return false;
 		}
+
+		if (this.B.bitLength() !== Iterations + 1) {
+			return false;
+		}
+
+		const modN = new ModInt(N);
+		const Y: BN[] = new Array(Iterations);
+		for (let i = 0; i < Iterations; i++) {
+			const ei = SHA512_256i_TAGGED(session, this.W, N, ...Y.slice(0, i));
+			Y[i] = RejectionSample(N, ei);
+		}
+
+		// Fig 16. Verification
+		if (N.isEven() || probablyPrime(N)) {
+			return false;
+		}
+
+		const verificationPromises: Promise<boolean>[] = [];
+
+		for (let i = 0; i < Iterations; i++) {
+			verificationPromises.push(
+				Promise.resolve().then(() => {
+					const left = modN.exp(this.Z[i], N);
+					return new BN(left.toString()).eq(Y[i]);
+				})
+			);
+
+			verificationPromises.push(
+				Promise.resolve().then(() => {
+					const a = this.A.testn(i);
+					const b = this.B.testn(i);
+					if (typeof a !== 'boolean' || typeof b !== 'boolean') {
+						return false;
+					}
+					const left = new BN(modN.exp(this.X[i], new BN(4)).toString());
+					let right = Y[i];
+					if (a) {
+						right = new BN(modN.mul(new BN(-1), right).toString());
+					}
+					if (b) {
+						right = new BN(modN.mul(this.W, right).toString());
+					}
+					return left.eq(right);
+				})
+			);
+		}
+
+		const results = await Promise.all(verificationPromises);
+		return results.every(result => result);
+	}
+
+	validateBasic(): boolean {
+		if (!this.W) return false;
+		if (!this.X.every(x => x !== null)) return false;
+		if (!this.A) return false;
+		if (!this.B) return false;
+		if (!this.Z.every(z => z !== null)) return false;
 		return true;
 	}
 
-	public serialize(): Buffer[] {
-		const parts = [this.w, ...this.x, this.a, this.b, ...this.z];
-		return parts.map(part => part.toArrayLike(Buffer));
-	}
-
-	public static unmarshalModProof(bzs: Buffer[]): ModProof {
-		const bis = bzs.map(bz => new BN(bz));
-		const w = bis[0];
-		const x = bis.slice(1, Iterations + 1);
-		const a = bis[Iterations + 1];
-		const b = bis[Iterations + 2];
-		const z = bis.slice(Iterations + 3, ProofModBytesParts);
-		return new ModProof(w, x, a, b, z);
+	toBytes(): Buffer[] {
+		const bzs: Buffer[] = [];
+		bzs.push(this.W.toArrayLike(Buffer));
+		this.X.forEach(x => bzs.push(x.toArrayLike(Buffer)));
+		bzs.push(this.A.toArrayLike(Buffer));
+		bzs.push(this.B.toArrayLike(Buffer));
+		this.Z.forEach(z => bzs.push(z.toArrayLike(Buffer)));
+		return bzs;
 	}
 }
 
 function isQuadraticResidue(X: BN, N: BN): boolean {
-	return X.jacobi(N) === 1;
+	const gcd = X.gcd(N);
+	if (!gcd.eq(one)) {
+		return false;
+	}
+	// For prime N, Euler's criterion states that X is a quadratic residue
+	// if and only if X^((N-1)/2) ≡ 1 (mod N)
+	const exp = N.sub(one).divn(2);
+	return X.pow(exp).mod(N).eq(one);
 }

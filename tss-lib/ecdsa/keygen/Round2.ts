@@ -1,7 +1,7 @@
 import { KeygenParams, MessageFromTss, Round, ParsedMessage, PartyID } from './interfaces';
 import { Commitment, Shares } from './interfaces';
-import { ProofFac } from '../../crypto/facproof';
-import { ProofMod } from '../../crypto/modproof';
+import { ProofFac } from '../../crypto/FACProof';
+import { ModProof } from '../../crypto/MODProof';
 import { KGRound1Message } from './KGRound1Message';
 import { KGRound2Message1 } from './KGRound2Message1';
 import { KGRound2Message2 } from './KGRound2Message2';
@@ -119,9 +119,9 @@ class Round2 implements Round {
             }
 
             // Broadcast de-commitments of Shamir poly*G
-            let modProof = new ProofMod();
+            let modProof: ModProof;
             if (!this.params.noProofMod) {
-                modProof = ProofMod.newProof(contextI, this.data.paillierSK.n, this.data.paillierSK.p, this.data.paillierSK.q, this.params.rand);
+                modProof = ModProof.newProof(contextI, this.data.paillierSK.n, this.data.paillierSK.p, this.data.paillierSK.q, this.params.rand);
             }
             const r2msg2 = new KGRound2Message2(this.params.partyID(), this.temp.deCommitPolyG);
             this.temp.kgRound2Message2s[i] = r2msg2;
@@ -133,7 +133,7 @@ class Round2 implements Round {
         }
     }
 
-    public update(msg: ParsedMessage): [boolean, TssError | null] {
+    public update(msg: any): [boolean, TssError | null] {
         const fromPIdx = msg.getFrom().index;
 
         switch (msg.content().constructor.name) {

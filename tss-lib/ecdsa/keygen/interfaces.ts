@@ -1,11 +1,15 @@
 import BN from 'bn.js';
 import crypto from 'crypto';
+import { ec as EC } from 'elliptic';
+import { PartyID } from './PartyID';
 
 class Commitment {
-    private value: BN;
+    public value: BN;
+    commitment: Uint8Array;
 
     constructor(value: BN) {
         this.value = value;
+        this.commitment = new Uint8Array(crypto.createHash('sha256').update(Buffer.from(this.value.toArray())).digest());
     }
 
     public toBytes(): Uint8Array {
@@ -21,6 +25,7 @@ class Commitment {
 
 class Shares {
     private shares: BN[];
+    [index: number]: { share: string };
 
     constructor() {
         this.shares = [];
@@ -42,6 +47,9 @@ interface KeygenParams {
 	noProofMod: any;
     totalParties: number;
     partyID(): PartyID;
+    partyThreshold: number;
+
+
 }
 
 interface LocalPartySaveData {
@@ -67,10 +75,12 @@ interface ParsedMessage {
 
 interface PartyID {
     index: number;
+    keyInt(): BN;
+    toString(): string;
 }
 
 interface Round {
-    start(): TssError | null;
+    start(): Promise<TssError | null>;
     update(msg: ParsedMessage): [boolean, TssError | null];
 }
 
@@ -112,6 +122,28 @@ interface LocalTempData {
 	shares: Shares;
 	deCommitPolyG: Commitment;
 	started: boolean;
+}
+
+export interface Message {
+    wireBytes: Buffer;
+    from: PartyID;
+    to?: PartyID[];
+    isBroadcast: boolean;
+    content(): any;
+    getFrom(): PartyID;
+}
+
+export interface Parameters {
+    threshold: number;
+    parties: PartyID[];
+    partyID(): PartyID;
+    partyCount(): number;
+    ec: {
+        n: BN;
+        g: any; // Elliptic curve point
+        curve: EC;
+        p: BN;
+    };
 }
 
 export { KeygenParams, LocalPartySaveData, LocalPreParams, ParsedMessage, PartyID, Round, TssError, MessageFromTss, BaseParty, LocalTempData, Commitment, Shares };

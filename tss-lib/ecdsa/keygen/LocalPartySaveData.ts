@@ -1,16 +1,23 @@
 import BN from 'bn.js';
 import { LocalPreParams } from './LocalPreParams';
 import { Shares } from './interfaces';
-import { ProofFac } from '../../crypto/facproof';
-import { ProofMod } from '../../crypto/modproof';
+import { ProofFac } from '../../crypto/FACProof';
+import { ModProof } from '../../crypto/MODProof';
+import { ECPoint } from '../../crypto/ECPoint';
 
 class LocalPartySaveData {
     public localPreParams?: LocalPreParams;
     public combinedShares: Shares;
-
+    public ecdsaPub: any;
     public shareID: BN = new BN(0);
     public ks: BN[];
+    public bigXj: ECPoint[];
+    public Alpha!: BN;
+    public Beta!: BN;
+    public P!: BN;
+    public Q!: BN;
 
+    xi?: BN;
     paillierPKs: any;
     NTildej: any;
     H1j: any;
@@ -23,7 +30,7 @@ class LocalPartySaveData {
 
 	deCommitPolyGs: any[];
 
-	modProofs: ProofMod[];
+    modProofs: ModProof[];
 
     constructor(partyCount: number) {
         this.combinedShares = new Shares();
@@ -38,6 +45,7 @@ class LocalPartySaveData {
 		this.deCommitPolyGs = new Array(partyCount);
 		this.modProofs = new Array(partyCount);
 		
+        this.bigXj = new Array(partyCount);
     }
 
     public originalIndex(): number {

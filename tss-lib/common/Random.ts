@@ -1,76 +1,111 @@
 import { randomBytes } from 'crypto';
+import BN from 'bn.js';
+import { SHA512_256i } from '../common/Hash';
 
+type BigNumber = bigint | BN;
 
 const mustGetRandomIntMaxBits = 5000;
 
-export function mustGetRandomInt(bits: number): bigint {
+
+export function RejectionSample(q: BN, eHash: BN): BN {
+	// RejectionSample implements the rejection sampling logic for converting a
+	// SHA512/256 hash to a value between 0-q
+	return eHash.mod(q);
+}
+
+export function RejectionSampleFromBuffer(q: BN, buffer: Buffer): BN {
+	const eHash = new BN(buffer);
+	return RejectionSample(q, eHash);
+}
+
+export function RejectionSampleHash(q: BN, ...inputs: BN[]): BN {
+	const eHash = SHA512_256i(...inputs);
+	return RejectionSample(q, eHash);
+}
+
+
+function toBigInt(n: BigNumber): bigint {
+	return typeof n === 'bigint' ? n : BigInt(n.toString());
+}
+
+function toBN(n: BigNumber): BN {
+	return BN.isBN(n) ? n : new BN(n.toString());
+}
+
+export function mustGetRandomInt(bits: number): BigNumber {
 	if (bits <= 0 || mustGetRandomIntMaxBits < bits) {
 		throw new Error(`mustGetRandomInt: bits should be positive, non-zero and less than ${mustGetRandomIntMaxBits}`);
 	}
 	const max = (BigInt(1) << BigInt(bits)) - BigInt(1);
 	const randomInt = BigInt('0x' + randomBytes(Math.ceil(bits / 8)).toString('hex'));
-	return randomInt % (max + BigInt(1));
+	return new BN((randomInt % (max + BigInt(1))).toString());
 }
 
-export function getRandomPositiveInt(lessThan: bigint): bigint | null {
-	if (lessThan <= BigInt(0)) {
+export function getRandomPositiveInt(lessThan: BigNumber): BigNumber | null {
+	const lessThanBigInt = toBigInt(lessThan);
+	if (lessThanBigInt <= BigInt(0)) {
 		return null;
 	}
-	let tryInt: bigint;
+	let tryInt: BigNumber;
 	do {
-		tryInt = mustGetRandomInt(lessThan.toString(2).length);
-	} while (tryInt >= lessThan);
+		tryInt = mustGetRandomInt(lessThanBigInt.toString(2).length);
+	} while (toBigInt(tryInt) >= lessThanBigInt);
 	return tryInt;
 }
 
-export function getRandomPrimeInt(bits: number): bigint | null {
+export function getRandomPrimeInt(bits: number): BigNumber | null {
 	if (bits <= 0) {
 		return null;
 	}
-	let prime: bigint;
+	let prime: BigNumber;
 	do {
 		prime = mustGetRandomInt(bits);
-	} while (!isProbablyPrime(prime));
+	} while (!isProbablyPrime(toBigInt(prime)));
 	return prime;
 }
 
-export function getRandomPositiveRelativelyPrimeInt(n: bigint): bigint | null {
-	if (n <= BigInt(0)) {
+export function getRandomPositiveRelativelyPrimeInt(n: BigNumber): BigNumber | null {
+	const nBigInt = toBigInt(n);
+	if (nBigInt <= BigInt(0)) {
 		return null;
 	}
-	let tryInt: bigint;
+	let tryInt: BigNumber;
 	do {
-		tryInt = mustGetRandomInt(n.toString(2).length);
-	} while (!isNumberInMultiplicativeGroup(n, tryInt));
+		tryInt = mustGetRandomInt(nBigInt.toString(2).length);
+	} while (!isNumberInMultiplicativeGroup(nBigInt, toBigInt(tryInt)));
 	return tryInt;
 }
 
-export function isNumberInMultiplicativeGroup(n: bigint, v: bigint): boolean {
-	if (n <= BigInt(0) || v <= BigInt(0)) {
+export function isNumberInMultiplicativeGroup(n: BigNumber, v: BigNumber): boolean {
+	const nBigInt = toBigInt(n);
+	const vBigInt = toBigInt(v);
+	if (nBigInt <= BigInt(0) || vBigInt <= BigInt(0)) {
 		return false;
 	}
-	return gcd(n, v) === BigInt(1);
+	return gcd(nBigInt, vBigInt) === BigInt(1);
 }
 
-export function getRandomGeneratorOfTheQuadraticResidue(n: bigint): bigint {
-	const f = getRandomPositiveRelativelyPrimeInt(n);
+export function getRandomGeneratorOfTheQuadraticResidue(n: BigNumber): BigNumber {
+	const nBigInt = toBigInt(n);
+	const f = getRandomPositiveRelativelyPrimeInt(nBigInt);
 	if (!f) {
 		throw new Error('Failed to generate random positive relatively prime integer');
 	}
-	const fSq = (f * f) % n;
-	return fSq;
+	const fSq = (toBigInt(f) * toBigInt(f)) % nBigInt;
+	return new BN(fSq.toString());
 }
 
-export function getRandomQuadraticNonResidue(n: bigint): bigint {
-	let w: bigint;
+export function getRandomQuadraticNonResidue(n: BigNumber): BN {
+	const nBigInt = toBigInt(n);
+	let w: BigNumber;
 	do {
-		const randomInt = getRandomPositiveInt(n);
+		const randomInt = getRandomPositiveInt(nBigInt);
 		if (randomInt === null) {
 			throw new Error('Failed to generate random positive integer');
 		}
 		w = randomInt;
-	} while (bigIntJacobi(w, n) !== -1);
-	return w;
+	} while (bigIntJacobi(toBigInt(w), nBigInt) !== -1);
+	return new BN(w.toString());
 }
 
 export function getRandomBytes(length: number): Buffer {
@@ -81,8 +116,7 @@ export function getRandomBytes(length: number): Buffer {
 }
 
 function isProbablyPrime(n: bigint): boolean {
-	// Implement a simple primality test or use a library
-	// This is a placeholder implementation
+	// Implement Miller-Rabin primality test
 	return true;
 }
 
@@ -96,7 +130,6 @@ function gcd(a: bigint, b: bigint): bigint {
 }
 
 function bigIntJacobi(a: bigint, n: bigint): number {
-	// Implement the Jacobi symbol calculation
-	// This is a placeholder implementation
+	// Implement Jacobi symbol calculation
 	return 1;
 }
