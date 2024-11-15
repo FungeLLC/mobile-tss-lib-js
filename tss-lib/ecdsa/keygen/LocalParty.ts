@@ -1,11 +1,15 @@
-import { KeygenParams, LocalPreParams, ParsedMessage, PartyID, Round, MessageFromTss, LocalTempData, Shares, Commitment } from './interfaces';
+import { ParsedMessage, PartyID, Round, MessageFromTss, Shares, Commitment } from './interfaces';
+import { KeygenParams } from './KeygenParams';
 import { LocalPartySaveData } from './LocalPartySaveData';
+import { LocalTempData } from './LocalTempData';
 import BN from 'bn.js';
 import { Round1 } from './Round1';
 import { Round2 } from './Round2';
 import { Round3 } from './Round3';
+import { Round4 } from './Round4';
 import { BaseParty } from './BaseParty';
 import { TssError } from './TssError';
+import { LocalPreParams } from './LocalPreParams';
 
 class LocalParty {
     private baseParty: BaseParty;
@@ -14,6 +18,7 @@ class LocalParty {
     private data: LocalPartySaveData;
     private out: (msg: MessageFromTss) => void;
     private end: (data: LocalPartySaveData) => void;
+    private currentRound: Round;
 
     constructor(params: KeygenParams, out: (msg: MessageFromTss) => void, end: (data: LocalPartySaveData) => void, optionalPreParams?: LocalPreParams) {
         const partyCount = params.totalParties;
@@ -34,14 +39,18 @@ class LocalParty {
             kgRound2Message2s: new Array(partyCount),
             kgRound3Messages: new Array(partyCount),
             KGCs: new Array(partyCount),
-            vs: new Shares(),
+            vs: [],
             ssid: new Uint8Array(),
             ssidNonce: new BN(0),
             shares: new Shares(),
-            deCommitPolyG: new Commitment(new BN(0))
+            deCommitPolyG: new Commitment(new BN(0)),
+            started: false,
+            ui: new BN(0),
+            xi: new BN(0)
         };
         this.out = out;
         this.end = end;
+        this.currentRound = new Round1(params, this.data, this.temp, this.out, this.end);
     }
 
     public firstRound(): Round {
@@ -49,11 +58,11 @@ class LocalParty {
     }
 
     public start(): TssError | null {
-        return this.baseParty.start(this, 'keygen');
+        return this.baseParty.start(this, 'ecdsa-keygen');
     }
 
     public update(msg: ParsedMessage): [boolean, TssError | null] {
-        return this.baseParty.update(this, msg, 'keygen');
+        return this.baseParty.update(this, msg, 'ecdsa-keygen');
     }
 
     public updateFromBytes(wireBytes: Uint8Array, from: PartyID, isBroadcast: boolean): [boolean, TssError | null] {
@@ -61,7 +70,7 @@ class LocalParty {
         if (msg instanceof TssError) {
             return [false, msg];
         }
-        return this.update(msg as ParsedMessage);
+        return this.update(msg);
     }
 
     public validateMessage(msg: ParsedMessage): [boolean, TssError | null] {
@@ -70,12 +79,12 @@ class LocalParty {
             return [ok, err];
         }
         if (this.params.totalParties - 1 < msg.getFrom().index) {
-            return [false, new TssError(`received msg with a sender index too great (${this.params.totalParties} <= ${msg.getFrom().index})`)];
+            return [false, new TssError([`received msg with a sender index too great (${this.params.totalParties} <= ${msg.getFrom().index})`, msg.getFrom()])];
         }
         return [true, null];
     }
 
-    public storeMessage(msg: ParsedMessage): [boolean, TssError | null] {
+    public storeMessage(msg: any): [boolean, TssError | null] {
         const [ok, err] = this.validateMessage(msg);
         if (!ok || err) {
             return [ok, err];
