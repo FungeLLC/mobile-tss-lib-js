@@ -2,7 +2,7 @@ import BN from 'bn.js';
 import { LocalPreParams } from './LocalPreParams';
 import { Shares } from './interfaces';
 import { ProofFac } from '../../crypto/FACProof';
-import { ModProof } from '../../crypto/MODProof';
+import { ProofMod } from '../../crypto/MODProof';
 import { ECPoint } from '../../crypto/ECPoint';
 
 class LocalPartySaveData {
@@ -30,7 +30,7 @@ class LocalPartySaveData {
 
 	deCommitPolyGs: any[];
 
-    modProofs: ModProof[];
+    modProofs: ProofMod[];
 
     constructor(partyCount: number) {
         this.combinedShares = new Shares();

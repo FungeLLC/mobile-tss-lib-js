@@ -1,4 +1,4 @@
-import { ParsedMessage, PartyID, Round, MessageFromTss, Shares, Commitment } from './interfaces';
+import { ParsedMessage, PartyID, Round, MessageFromTss, Commitment } from './interfaces';
 import { KeygenParams } from './KeygenParams';
 import { LocalPartySaveData } from './LocalPartySaveData';
 import { LocalTempData } from './LocalTempData';
@@ -10,6 +10,7 @@ import { Round4 } from './Round4';
 import { BaseParty } from './BaseParty';
 import { TssError } from './TssError';
 import { LocalPreParams } from './LocalPreParams';
+import { Shares } from '../../crypto/VSS';
 
 class LocalParty {
     private baseParty: BaseParty;
@@ -43,7 +44,7 @@ class LocalParty {
             ssid: new Uint8Array(),
             ssidNonce: new BN(0),
             shares: new Shares(),
-            deCommitPolyG: new Commitment(new BN(0)),
+            deCommitPolyG: [],
             started: false,
             ui: new BN(0),
             xi: new BN(0)

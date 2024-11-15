@@ -73,11 +73,11 @@ interface ParsedMessage {
     content(): any;
 }
 
-interface PartyID {
-    index: number;
-    keyInt(): BN;
-    toString(): string;
-}
+// interface PartyID {
+//     index: number;
+//     keyInt(): BN;
+//     toString(): string;
+// }
 
 interface Round {
     start(): Promise<TssError | null>;

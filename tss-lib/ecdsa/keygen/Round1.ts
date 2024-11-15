@@ -68,6 +68,22 @@ class KGRound1Message implements ParsedMessage {
         return DLNProof.unmarshalDLNProof(this.dlnProof2);
     }
 
+    public verifyDLNProof1(h1: BN, h2: BN, NTildej: BN): boolean {
+        const dlnProof1 = this.unmarshalDLNProof1();
+        if (!dlnProof1) {
+            return false;
+        }
+        return dlnProof1.verify(h1, h2, NTildej);
+    }
+
+    public verifyDLNProof2(h2: BN, h1: BN, NTildej: BN): boolean {
+        const dlnProof2 = this.unmarshalDLNProof2();
+        if (!dlnProof2) {
+            return false;
+        }
+        return dlnProof2.verify(h2, h1, NTildej);
+    }
+
 }
 
 class Round1 extends BaseRound implements Round {
