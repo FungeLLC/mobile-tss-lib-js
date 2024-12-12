@@ -1,7 +1,7 @@
 import { Parameters, PartyID, Round, MessageFromTss, ParsedMessage } from './interfaces';
 import { LocalPartySaveData } from './LocalPartySaveData';
 import { LocalTempData } from './LocalTempData';
-import { TssError } from './TssError';
+import { TssError } from '../../common/TssError';
 import { SHA512_256i } from '../../common/Hash';
 import BN from 'bn.js';
 

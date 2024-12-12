@@ -16,8 +16,6 @@ class KeygenParams implements Parameters {
 		curve: EC;
 		p: BN;
 	};
-	public readonly noProofMod: boolean = false
-	public readonly noProofFac: boolean = false
 	parties: PartyID[];
 
 	constructor(config: KeygenConfig) {
@@ -30,10 +28,10 @@ class KeygenParams implements Parameters {
 		this.rand = config.randomSource;
 		this.partyIDInstance = new PartyID(0, 'default');
 		this.ecParams = {
-			n: new BN(0),
+			n: new BN('1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed', 16), // Ed25519 order
 			g: null,
-			curve: new EC('secp256k1'),
-			p: new BN(0)
+			curve: new EC('ed25519'),
+			p: new BN('7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed', 16)  // Ed25519 prime
 		};
 		this.parties = new Array(this.totalParties);
 		for (let i = 0; i < this.totalParties; i++) {
@@ -41,8 +39,8 @@ class KeygenParams implements Parameters {
 		}
 	}
 
-	partyCount(): number {
-		throw new Error('Method not implemented.');
+	public partyCount(): number {
+		return this.totalParties;
 	}
 
 	public partyID(): PartyID {

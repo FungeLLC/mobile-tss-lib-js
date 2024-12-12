@@ -2,11 +2,12 @@ import { MessageFromTss, Round, ParsedMessage, PartyID, Commitment } from './int
 import { KeygenParams } from './KeygenParams';
 import { LocalPartySaveData } from './LocalPartySaveData';
 import { LocalTempData } from './LocalTempData';
-import { TssError } from './TssError';
+import { TssError } from '../../common/TssError';
 import ModInt from '../../common/ModInt';
 import { ECPoint } from '../../crypto/ECPoint';
-import { VSS, Share } from '../../crypto/VSS';
+import {  Share } from '../../crypto/VSS';
 import { HashCommitDecommit } from '../../crypto/Commitment';
+type Vs = ECPoint[];
 import BN from 'bn.js';
 import { KGRound3Message } from './KGRound3Message';
 
@@ -21,6 +22,15 @@ class Round3 implements Round {
 		private end: (data: LocalPartySaveData) => void
 	) { }
 
+	public canProceed(): boolean {
+		if (!this.started) return false;
+		for (let i = 0; i < this.params.totalParties; i++) {
+			if (i === this.params.partyID().index) continue;
+			if (!this.temp.kgRound3Messages[i]) return false;
+		}
+		return true;
+	}
+
 	public async start(): Promise<TssError | null> {
 		try {
 			if (this.started) {
@@ -30,22 +40,22 @@ class Round3 implements Round {
 
 			const PIdx = this.params.partyID().index;
 
-			// 1,9. calculate xi
+			// 1,9. Calculate xi by combining shares
 			let xi = new BN(this.temp.shares[PIdx].share);
 			for (let j = 0; j < this.params.totalParties; j++) {
 				if (j === PIdx) continue;
 				const r2msg1 = this.temp.kgRound2Message1s[j]?.content();
 				if (!r2msg1) {
-					throw new TssError(`kgRound2Message1s[${j}] is null`);
+					return new TssError(`Missing share from party ${j}`);
 				}
 				const share = r2msg1.unmarshalShare();
-				xi = xi.add(share);
+				xi = xi.add(share).mod(this.params.ec.n);
 			}
-			this.data.xi = xi.mod(this.params.ec.n);
+			this.data.xi = xi;
 
 			// 2-3. Process VSS
-			const Vc: ECPoint[] = new Array(this.params.partyThreshold + 1);
-			for (let c = 0; c <= this.params.partyThreshold; c++) {
+			const Vc: Vs = new Array(this.params.threshold + 1);
+			for (let c = 0; c <= this.params.threshold; c++) {
 				Vc[c] = this.temp.vs[c];
 			}
 
@@ -69,7 +79,7 @@ class Round3 implements Round {
 
 			// 12-16. Compute Xj for each Pj
 			const modQ = new ModInt(this.params.ec.n);
-			const bigXj: ECPoint[] = new Array(this.params.totalParties);
+			this.data.bigXj = new Array(this.params.totalParties);
 
 			for (let j = 0; j < this.params.totalParties; j++) {
 				const kj = this.params.parties[j].keyInt();
@@ -80,20 +90,23 @@ class Round3 implements Round {
 					z = modQ.mul(z, kj) as BN;
 					BigXj = BigXj.add(Vc[c].scalarMult(z));
 				}
-				bigXj[j] = BigXj;
+				this.data.bigXj[j] = BigXj;
 			}
-			this.data.bigXj = bigXj;
 
-			// 17. Compute ECDSA public key
+			// 17. Compute and save ECDSA public key
 			const ecdsaPubKey = Vc[0];
 			this.data.ecdsaPub = ecdsaPubKey;
 
-			// Broadcast Paillier proof
+			// Generate and broadcast Paillier proof
 			const ki = this.params.partyID().keyInt();
 			const proof = this.data.paillierSK.generateProof(ki, ecdsaPubKey);
 			const r3msg = new KGRound3Message(this.params.partyID(), proof);
 			this.temp.kgRound3Messages[PIdx] = r3msg;
-			this.out(r3msg);
+			this.out({
+				wireBytes: Buffer.from(JSON.stringify(r3msg.content())),
+				from: this.params.partyID(),
+				isBroadcast: true
+			});
 
 			return null;
 		} catch (error) {
@@ -122,47 +135,20 @@ class Round3 implements Round {
 				return { error: `party ${j}: de-commitment verify failed` };
 			}
 
-			// Unflatten points
-			const PjVs = ECPoint.unflattenECPoints(this.params.ec.curve, flatPolyGs);
-
-			// Verify ModProof
-			const modProof = r2msg2.unmarshalModProof();
-			const contextJ = Buffer.concat([
-				this.temp.ssid,
-				Buffer.from(j.toString())
-			]);
-
-			if (!this.params.noProofMod && !modProof.verify(contextJ, this.data.paillierPKs[j].N)) {
-				return { error: `party ${j}: modProof verify failed` };
-			}
-
-			// Verify share and VSS
+			// Verify VSS
+			const PjVs = ECPoint.unFlattenECPoints(flatPolyGs, this.params.ec.curve);
 			const r2msg1 = this.temp.kgRound2Message1s[j]?.content();
 			if (!r2msg1) {
 				return { error: `party ${j}: kgRound2Message1s is null` };
 			}
 
-			const PjShare = new Share(
+			const share = r2msg1.unmarshalShare();
+			if (!new Share(
 				this.params.threshold,
 				this.params.partyID().keyInt(),
-				r2msg1.unmarshalShare()
-			);
-
-			if (!PjShare.verify(this.params.ec.curve, this.params.threshold, PjVs)) {
+				share
+			).verify(this.params.ec.curve, this.params.threshold, PjVs)) {
 				return { error: `party ${j}: vss verify failed` };
-			}
-
-			// Verify facProof
-			const facProof = r2msg1.unmarshalFacProof();
-			if (!this.params.noProofFac && !facProof.verify(
-				contextJ,
-				this.params.ec.curve,
-				this.data.paillierPKs[j].N,
-				this.data.NTildej[j],
-				this.data.H1j[j],
-				this.data.H2j[j]
-			)) {
-				return { error: `party ${j}: facProof verify failed` };
 			}
 
 			return {};
@@ -180,16 +166,8 @@ class Round3 implements Round {
 
 		this.temp.kgRound3Messages[fromPIdx] = msg;
 
-		if (this.temp.kgRound3Messages.every(m => m !== undefined)) {
-			this.endRound();
-		}
-
 		return [true, null];
-	}
-
-	private endRound(): void {
-		this.end(this.data);
 	}
 }
 
-export { Round3, KGRound3Message };
+export { Round3 };

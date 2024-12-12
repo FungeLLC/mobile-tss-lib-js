@@ -49,11 +49,17 @@ function isProbablePrime(n: BN): boolean {
 
 	// Test against small primes first
 	if (!n.gcd(smallPrimesProduct).eq(new BN(1))) {
-		return false;
+		for (const p of smallPrimes) {
+			if (n.modn(p) === 0) return n.eqn(p);
+		}
 	}
 
 	// Miller-Rabin test with first few prime numbers as bases
-	const witnesses = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+	const witnesses = [
+		2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
+		73, 79, 83, 89, 97, 101, 103, 107, 109, 113
+	];
+
 	for (let i = 0; i < Math.min(witnesses.length, primeTestN); i++) {
 		if (!millerRabinTest(n, new BN(witnesses[i]))) {
 			return false;
@@ -63,140 +69,35 @@ function isProbablePrime(n: BN): boolean {
 	return true;
 }
 
-export function probablyPrime(prime: BN | null): boolean {
-	return prime !== null && isProbablePrime(prime);
+function isSafePrime(p: BN): boolean {
+	if (!isProbablePrime(p)) return false;
+
+	// For safe prime p, (p-1)/2 must also be prime
+	const q = p.subn(1).divn(2);
+	return isProbablePrime(q);
 }
 
-
-function getSafePrime(p: BN): BN {
-	return p.mul(two).add(one);
-}
-
-
-export class GermainSafePrime {
-	constructor(
-		private q: BN, // prime
-		private p: BN  // safePrime = 2q + 1
-	) { }
-
-	public prime(): BN {
-		return this.q;
-	}
-
-	public safePrime(): BN {
-		return this.p;
-	}
-
-	public validate(): boolean {
-		return probablyPrime(this.q) &&
-			getSafePrime(this.q).eq(this.p) &&
-			probablyPrime(this.p);
-	}
-}
-
-
-export class SafePrimeError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'SafePrimeError';
-	}
-}
-
-export async function getRandomSafePrimesConcurrent(
-	bitLen: number,
-	numPrimes: number,
-	concurrency: number
-): Promise<GermainSafePrime[]> {
-	if (bitLen < 6) {
-		throw new SafePrimeError('safe prime size must be at least 6 bits');
-	}
-	if (numPrimes < 1) {
-		throw new SafePrimeError('numPrimes should be > 0');
-	}
-
-	const primes: GermainSafePrime[] = [];
-	const workers: Promise<GermainSafePrime>[] = [];
-
-	for (let i = 0; i < concurrency; i++) {
-		workers.push(generateSafePrime(bitLen));
-	}
-
-	while (primes.length < numPrimes) {
-		const prime = await Promise.race(workers);
-		primes.push(prime);
-
-		// Replace completed worker
-		const completePromiseIndex = workers.findIndex((w) => Promise.race([w]).then(() => true, () => false));
-		if (completePromiseIndex !== -1) {
-			workers[completePromiseIndex] = generateSafePrime(bitLen);
-		}
-	}
-
-	return primes;
-}
-
-async function generateSafePrime(pBitLen: number): Promise<GermainSafePrime> {
-	const qBitLen = pBitLen - 1;
-
+function generateSafePrime(bits: number): BN {
 	while (true) {
-		// Generate random candidate
-		const bytes = crypto.randomBytes(Math.ceil(qBitLen / 8));
-
-		// Set appropriate bits
-		const b = qBitLen % 8 || 8;
-		bytes[0] &= (1 << b) - 1;
-
-		if (b >= 2) {
-			bytes[0] |= 3 << (b - 2);
-		} else {
-			bytes[0] |= 1;
-			if (bytes.length > 1) {
-				bytes[1] |= 0x80;
-			}
-		}
-
-		// Make odd
-		bytes[bytes.length - 1] |= 1;
-
+		// Generate random q
+		const bytes = crypto.randomBytes(Math.ceil((bits - 1) / 8));
 		const q = new BN(bytes);
 
-		// Check divisibility by small primes
-		if (!isPrimeCandidate(q)) {
-			continue;
-		}
+		// Ensure q is odd and in correct range
+		q.setn(bits - 2, 1);  // Set highest bit
+		q.setn(0, 1);         // Ensure odd
 
-		// Check if q ≡ 1 (mod 3)
-		if (q.mod(three).eq(one)) {
-			continue;
-		}
+		// Check if q is prime
+		if (!isProbablePrime(q)) continue;
 
-		// Generate and check p = 2q + 1
-		const p = getSafePrime(q);
-		if (!isPrimeCandidate(p)) {
-			continue;
-		}
+		// Calculate p = 2q + 1
+		const p = q.muln(2).addn(1);
 
-		// Final primality tests
-		if (isProbablePrime(q) && isPocklingtonCriterionSatisfied(p) && q.bitLength() === qBitLen) {
-			const sgp = new GermainSafePrime(q, p);
-			if (sgp.validate()) {
-				return sgp;
-			}
+		// Check if p is prime
+		if (isProbablePrime(p)) {
+			return p;
 		}
 	}
 }
 
-function isPrimeCandidate(num: BN): boolean {
-	const m = num.mod(smallPrimesProduct);
-	for (const prime of smallPrimes) {
-		const p = new BN(prime);
-		if (m.mod(p).isZero() && !m.eq(p)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-function isPocklingtonCriterionSatisfied(p: BN): boolean {
-	return two.pow(p.subn(1)).mod(p).eq(one);
-}
+export {generateSafePrime, isSafePrime, isProbablePrime, millerRabinTest};

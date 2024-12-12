@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import BN from 'bn.js';
 import { SHA512_256i } from '../common/Hash';
 
@@ -132,4 +132,14 @@ function gcd(a: bigint, b: bigint): bigint {
 function bigIntJacobi(a: bigint, n: bigint): number {
 	// Implement Jacobi symbol calculation
 	return 1;
+}
+
+type RandomSource = {
+	randomBytes(size: Number): Buffer;
+};
+
+export function getRandomSource(): RandomSource {
+	return {
+		randomBytes: randomBytes
+	};
 }

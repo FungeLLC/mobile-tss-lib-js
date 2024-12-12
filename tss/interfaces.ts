@@ -1,3 +1,10 @@
+import { TssError } from '../tss-lib/common/TssError';
+import { Parameters, PartyID, Round, MessageFromTss, ParsedMessage } from '../tss-lib/ecdsa/keygen/interfaces';
+import { LocalPartySaveData } from '../tss-lib/ecdsa/keygen/LocalPartySaveData';
+import { LocalTempData } from '../tss-lib/ecdsa/keygen/LocalTempData';
+import BN from 'bn.js';
+
+
 // Define the Messenger interface
 export interface Messenger {
 	send(from: string, to: string, message: string): Promise<void>;
@@ -48,10 +55,5 @@ export interface LocalState {
 	pubKey?: string;
 }
 
-// Define the MessageFromTss interface
-export interface MessageFromTss {
-	wireBytes: Uint8Array;
-	from: string;
-	to?: string;
-	isBroadcast: boolean;
-}
+
+export { TssError, Parameters, PartyID, Round, MessageFromTss, ParsedMessage, LocalPartySaveData, LocalTempData, BN };

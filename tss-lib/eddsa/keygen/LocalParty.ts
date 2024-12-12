@@ -10,9 +10,8 @@ import { Round4 } from './Round4';
 import { BaseParty } from '../../common/BaseParty';
 import { TssError } from '../../common/TssError';
 import { LocalPreParams } from './LocalPreParams';
-import { ECPoint } from '../../crypto/ECPoint';
 import { Shares } from '../../crypto/VSS';
-
+import { ECPoint } from '../../crypto/ECPoint';
 
 class LocalParty {
     private baseParty: BaseParty;
@@ -22,10 +21,13 @@ class LocalParty {
     private out: (msg: MessageFromTss) => void;
     private end: (data: LocalPartySaveData) => void;
     private currentRound: Round;
+    private isComplete: boolean = false;
 
     constructor(params: KeygenParams, out: (msg: MessageFromTss) => void, end: (data: LocalPartySaveData) => void, optionalPreParams?: LocalPreParams) {
         const partyCount = params.totalParties;
         this.data = new LocalPartySaveData(partyCount);
+        this.out = out;
+        this.end = end;
 
         if (optionalPreParams) {
             if (!optionalPreParams.validateWithProof()) {
@@ -36,39 +38,21 @@ class LocalParty {
 
         this.baseParty = new BaseParty(params);
         this.params = params;
-        this.temp = {
-            kgRound1Messages: new Array(partyCount),
-            kgRound2Message1s: new Array(partyCount),
-            kgRound2Message2s: new Array(partyCount),
-            kgRound3Messages: new Array(partyCount),
-            KGCs: new Array(partyCount),
-            vs: [],
-            ssid: new Uint8Array(),
-            ssidNonce: new BN(0),
-            shares: [],
-            deCommitPolyG: [],
-            started: false,
-            ui: new BN(0),
-        };
-        this.out = out;
-        this.end = end;
+        this.temp = new LocalTempData(partyCount);
         this.currentRound = new Round1(params, this.data, this.temp, this.out, this.end);
     }
 
     public getPublicKey(): ECPoint | undefined {
-        // Make sure ecdsaPub is set after key generation
-        if (!this.data?.ecdsaPub) {
+        if (!this.data?.eddsaPub) {
             console.warn('Public key not yet generated');
             return undefined;
         }
-        return this.data.ecdsaPub;
+        return this.data.eddsaPub;
     }
 
-
-    public firstRound(): Round {
-        return new Round1(this.params, this.data, this.temp, this.out, this.end);
-    }
-
+    // public start(): TssError | null {
+    //     return this.baseParty.start(this, 'eddsa-keygen');
+    // }
     public async start(): Promise<TssError | null> {
         try {
             const result = await this.currentRound.start();
@@ -83,7 +67,6 @@ class LocalParty {
         }
     }
 
-
     private async processRound(): Promise<void> {
         if (this.currentRound.canProceed()) {
             if (this.currentRound instanceof Round1) {
@@ -96,67 +79,42 @@ class LocalParty {
             await this.currentRound.start();
         }
     }
-    // public start(): TssError | null {
-    //     return this.baseParty.start(this, 'ecdsa-keygen');
-    // }
 
-    public update(msg: ParsedMessage): [boolean, TssError | null] {
-        return this.baseParty.update(this, msg, 'ecdsa-keygen');
-    }
-
-    public updateFromBytes(wireBytes: Uint8Array, from: PartyID, isBroadcast: boolean): [boolean, TssError | null] {
-        const msg = this.baseParty.parseWireMessage(wireBytes, from, isBroadcast);
-        if (msg instanceof TssError) {
-            return [false, msg];
-        }
-        return this.update(msg);
-    }
-
-    public validateMessage(msg: ParsedMessage): [boolean, TssError | null] {
-        const [ok, err] = this.baseParty.validateMessage(msg);
-        if (!ok || err) {
-            return [ok, err];
-        }
-        if (this.params.totalParties - 1 < msg.getFrom().index) {
-            return [false, new TssError([`received msg with a sender index too great (${this.params.totalParties} <= ${msg.getFrom().index})`, msg.getFrom()])];
-        }
-        return [true, null];
-    }
-
-    public storeMessage(msg: any): [boolean, TssError | null] {
-        const [ok, err] = this.validateMessage(msg);
-        if (!ok || err) {
-            return [ok, err];
-        }
-        const fromPIdx = msg.getFrom().index;
-
-        switch (msg.content().constructor) {
-            case 'KGRound1Message':
-                this.temp.kgRound1Messages[fromPIdx] = msg;
-                break;
-            case 'KGRound2Message1':
-                this.temp.kgRound2Message1s[fromPIdx] = msg;
-                break;
-            case 'KGRound2Message2':
-                this.temp.kgRound2Message2s[fromPIdx] = msg;
-                break;
-            case 'KGRound3Message':
-                this.temp.kgRound3Messages[fromPIdx] = msg;
-                break;
-            default:
-                console.warn(`unrecognised message ignored: ${msg}`);
-                return [false, null];
-        }
-        return [true, null];
+    public firstRound(): Round {
+        return new Round1(this.params, this.data, this.temp, this.out, this.end);
     }
 
     public partyID(): PartyID {
         return this.params.partyID();
     }
 
-    public toString(): string {
-        return `id: ${this.partyID()}, ${this.baseParty.toString()}`;
+    public update(msg: MessageFromTss): [boolean, TssError | null] {
+        const [ok, err] = this.baseParty.update(this, msg, 'eddsa-keygen');
+        if (ok && this.currentRound instanceof Round4 && this.currentRound.canProceed()) {
+            this.isComplete = true;
+        }
+        return [ok, err];
+    }
+
+    public isKeyGenComplete(): boolean {
+        return this.isComplete;
+    }
+
+    // Update end method to set completion
+    private async processCurrentRound(): Promise<void> {
+        const result = await this.currentRound.start();
+        if (result) {
+            throw result;
+        }
+        if (this.currentRound instanceof Round1) {
+            this.currentRound = new Round2(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round2) {
+            this.currentRound = new Round3(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round3) {
+            this.currentRound = new Round4(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round4) {
+            this.isComplete = true;
+        }
     }
 }
-
 export { LocalParty };

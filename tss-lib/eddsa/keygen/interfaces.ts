@@ -68,6 +68,9 @@ interface TssError {
 
 
 interface MessageFromTss {
+    getFrom(): PartyID;
+    content(): any;
+
     wireBytes: Uint8Array;
     from: PartyID;
     to?: PartyID;

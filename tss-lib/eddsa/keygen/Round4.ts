@@ -7,7 +7,7 @@ import { BaseRound } from './Rounds';
 import { ECPoint } from '../../crypto/ECPoint';
 import BN from 'bn.js';
 
-class Round4 extends BaseRound implements Round {
+export class Round4 extends BaseRound implements Round {
 	constructor(
 		protected params: KeygenParams,
 		protected data: LocalPartySaveData,
@@ -19,13 +19,6 @@ class Round4 extends BaseRound implements Round {
 		this.number = 4;
 	}
 
-	public canProceed(): boolean {
-		if (!this.started) {
-			return false;
-		}
-		return this.ok.every(ok => ok);
-	}	
-
 	public async start(): Promise<TssError | null> {
 		try {
 			if (this.started) {
@@ -35,61 +28,13 @@ class Round4 extends BaseRound implements Round {
 			this.resetOK();
 
 			const i = this.params.partyID().index;
-			const Ps = this.params.parties;
-			const PIDs = Ps.map(p => p.keyInt());
-			const ecdsaPub = this.data.ecdsaPub;
+			const ecdsaPub = this.data.eddsaPub;
 
 			if (!ecdsaPub) {
-				return new TssError('ecdsa public key not set');
+				return new TssError('ed25519 public key not set');
 			}
 
-			// 1-3. Verify Paillier proofs concurrently
-			const verificationPromises = this.temp.kgRound3Messages.map(async (msg, j) => {
-				if (j === i) {
-					return true;
-				}
-				if (!msg) {
-					return false;
-				}
-
-				const r3msg = msg.content();
-				const proof = r3msg.unmarshalPaillierProof();
-				const ppk = this.data.paillierPKs[j];
-
-				if (!proof || !ppk) {
-					console.warn(`paillier proof or public key missing for party ${j}`);
-					return false;
-				}
-
-				try {
-					return await proof.verify(
-						ppk.N,
-						PIDs[j],
-						ecdsaPub
-					);
-				} catch (err) {
-					console.warn(`paillier verify failed for party ${Ps[j]}: ${err}`);
-					return false;
-				}
-			});
-
-			// Wait for all verifications
-			const results = await Promise.all(verificationPromises);
-
-			// Process results
-			const culprits: PartyID[] = [];
-			results.forEach((ok, j) => {
-				this.ok[j] = ok;
-				if (!ok && j !== i) {
-					culprits.push(Ps[j]);
-				}
-			});
-
-			if (culprits.length > 0) {
-				return new TssError(['paillier verify failed', culprits]);
-			}
-
-			// Final key assembly verification
+			// Final key verification
 			if (!this.verifyFinalKey()) {
 				return new TssError('final key verification failed');
 			}
@@ -117,8 +62,13 @@ class Round4 extends BaseRound implements Round {
 				share
 			);
 
+			// Point validation specific to Edwards curve
+			if (!pubKeyPoint.isOnCurve()) {
+				return false;
+			}
+
 			// Verify it matches the stored public key
-			return this.data.ecdsaPub?.equals(pubKeyPoint) ?? false;
+			return this.data.eddsaPub?.equals(pubKeyPoint) ?? false;
 
 		} catch (error) {
 			console.error('Final key verification failed:', error);
@@ -132,4 +82,3 @@ class Round4 extends BaseRound implements Round {
 	}
 }
 
-export { Round4 };

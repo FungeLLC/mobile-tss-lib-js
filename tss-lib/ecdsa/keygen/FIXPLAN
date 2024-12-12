@@ -1,0 +1,31 @@
+Missing Tests
+// Need test coverage for:
+- VSS share verification
+- DLN proof generation/verification
+- Paillier encryption/decryption
+- Round message processing
+- Commitment schemes
+
+Interface Refinements
+// Need to properly type:
+- Paillier public/private key types
+- Curve parameters
+- Random source interfaces
+
+Documentation
+// Missing documentation for:
+- Key generation protocol flow
+- Security parameters
+- Usage examples
+
+Performance Optimizations
+// Could improve:
+- Concurrent proof verification
+- Memory usage in large number operations
+- Message serialization
+
+Security Hardening
+// Need to verify:
+- Constant-time operations
+- Secure random number generation
+- Parameter validation

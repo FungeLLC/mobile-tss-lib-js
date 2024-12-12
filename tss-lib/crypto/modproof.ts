@@ -3,7 +3,7 @@ import ModInt  from '../common/ModInt';
 import { SHA512_256i_TAGGED } from '../common/Hash';
 import { RejectionSample } from '../common/Random';
 import { getRandomQuadraticNonResidue } from '../common/Random';
-import { probablyPrime } from '../common/SafePrime';
+import { isProbablePrime as probablyPrime } from '../common/SafePrime';
 
 const Iterations = 80;
 const ProofModBytesParts = Iterations * 2 + 3;
