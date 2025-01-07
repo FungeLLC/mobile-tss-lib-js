@@ -4,6 +4,7 @@ import BN from 'bn.js';
 import { ec as EC } from 'elliptic';
 import { PartyID } from './PartyID';
 import { TssError } from './TssError';
+import { curves } from 'elliptic';
 
 export interface RandomSource {
 	randomBytes(size: number): Buffer;
@@ -42,6 +43,8 @@ export interface KeygenConfig {
 	curve: CurveParams;
 	randomSource: RandomSource;
 	proofParams: ProofParams;
+	parties?: PartyID[];
+	partyID(): PartyID;
 }
 
 

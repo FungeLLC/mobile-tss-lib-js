@@ -1,95 +1,159 @@
 import { ec as EC } from 'elliptic';
 import BN from 'bn.js';
+import crypto from 'crypto';
 
 export class ECPoint {
-	private coords: [BN, BN];
+    private weierstrassXY?: [BN, BN];
+    private edwardsPoint?: any; // elliptic 'Point' for edwards
+    public curve: EC;
+	public curveType: string;
 
-	constructor(private curve: EC, X: BN, Y: BN) {
-		if (!isOnCurve(curve, X, Y)) {
-			throw new Error("NewECPoint: the given point is not on the elliptic curve");
-		}
-		this.coords = [X, Y];
-	}
+    constructor(curve: EC, X: BN, Y: BN, validate: boolean = true, curveType: string = 'edwards') {
+        this.curve = curve;
+		this.curveType = curveType;
+        if (this.curveType === 'edwards') {
+            // Directly use internal representation
+			this.edwardsPoint = curve.g.curve.point(X, Y);
+            if (validate && !this.edwardsPoint.validate()) {
+                throw new Error('NewECPoint: the given point is not on the edwards curve');
+            }
+        } else {
+            // Weierstrass
+            this.weierstrassXY = [X, Y];
+            if (validate) {
+                const point = this.curve.g.curve.point(X, Y);
+                if (!point.validate()) {
+                    throw new Error('NewECPoint: the given point is not on the elliptic curve');
+                }
+            }
+        }
+    }
 
-	static newECPointNoCurveCheck(curve: EC, X: BN, Y: BN): ECPoint {
-		const point = new ECPoint(curve, X, Y);
-		return point;
-	}
+    public static newECPointNoCurveCheck(curve: EC, X: BN, Y: BN): ECPoint {
+        return new ECPoint(curve, X, Y, false);
+    }
 
-	public X(): BN {
-		return this.coords[0].clone();
-	}
+    public X(): BN {
+        if (this.curveType === 'edwards') {
+            return this.edwardsPoint.getX();
+        }
+        return this.weierstrassXY![0].clone();
+    }
 
-	public Y(): BN {
-		return this.coords[1].clone();
-	}
+    public Y(): BN {
+        if (this.curveType === 'edwards') {
+            return this.edwardsPoint.getY();
+        }
+        return this.weierstrassXY![1].clone();
+    }
 
-	public add(p1: ECPoint): ECPoint {
-		const p1Point = this.curve.curve.point(this.X(), this.Y());
-		const p2Point = this.curve.curve.point(p1.X(), p1.Y());
-		const result = p1Point.add(p2Point);
-		return new ECPoint(this.curve, result.getX(), result.getY());
-	}
+    public isInfinity(): boolean {
+        return this.X().isZero() && this.Y().isZero();
+    }
 
-	public scalarMult(k: BN): ECPoint {
-		const point = this.curve.curve.point(this.X(), this.Y());
-		const result = point.mul(k);
-		return new ECPoint(this.curve, result.getX(), result.getY());
-	}
+    public isValid(): boolean {
 
-	public static scalarBaseMult(curve: EC, k: BN): ECPoint {
-		const result = curve.g.mul(k);
-		return new ECPoint(curve, result.getX(), result.getY());
-	}
+		return ECPoint.newECPointNoCurveCheck(this.curve, this.X(), this.Y()).isOnCurve();
+    }
 
-	public isOnCurve(): boolean {
-		return isOnCurve(this.curve, this.coords[0], this.coords[1]);
-	}
+    public add(p1: ECPoint): ECPoint {
+        if (this.curveType === 'edwards') {
+            const sum = this.edwardsPoint.add(p1.edwardsPoint);
+            return ECPoint.newECPointNoCurveCheck(this.curve, sum.getX(), sum.getY());
+        }
+        const p1Point = this.curve.curve.point(this.X(), this.Y());
+        const p2Point = this.curve.curve.point(p1.X(), p1.Y());
+        const result = p1Point.add(p2Point);
+        return new ECPoint(this.curve, result.getX(), result.getY());
+    }
 
-	public getCurve(): EC {
-		return this.curve;
-	}
+    public scalarMult(k: BN): ECPoint {
+        const reduced = k.umod(this.curve.n as BN);
+        if (this.curveType === 'edwards') {
+            // Multiply internal edwards point
+            const result = this.edwardsPoint.mul(reduced);
+            return ECPoint.newECPointNoCurveCheck(this.curve, result.getX(), result.getY());
+        }
+        // Weierstrass
+        const point = this.curve.curve.point(this.X(), this.Y());
+        const mulResult = point.mul(reduced);
+        return new ECPoint(this.curve, mulResult.getX(), mulResult.getY());
+    }
 
-	public equals(p2: ECPoint | null): boolean {
-		if (!p2) return false;
-		return this.X().eq(p2.X()) && this.Y().eq(p2.Y());
-	}
+    public static scalarBaseMult(curve: EC, k: BN, curveType: string = 'edwards'): ECPoint {
 
-	public setCurve(curve: EC): ECPoint {
-		this.curve = curve;
-		return this;
-	}
+        const reduced = k.umod(curve.n as BN);
+        if (curveType === 'edwards') {
+            const result = curve.g.mul(reduced);
+            //if type is point use x, y
+            if(result.getX && result.getY) {
+                return ECPoint.newECPointNoCurveCheck(curve, result.getX(), result.getY());
+            }
+            //if type is ECPoint use X(), Y()
 
-	public static flattenECPoints(points: ECPoint[]): BN[] {
+            return ECPoint.newECPointNoCurveCheck(curve, result.X(), result.Y());
+        }
+        // Weierstrass
+        const result = curve.g.mul(reduced);
+        return new ECPoint(curve, result.getX(), result.getY());
+    }
 
-		return points.reduce((acc: BN[], point: ECPoint) => {
+    public isOnCurve(): boolean {
+        if (this.curveType === 'edwards') {
+            // Validate internal edwards point
+            return this.edwardsPoint.validate();
+        }
+        // Weierstrass
+        try {
+            const point = this.curve.curve.point(this.X(), this.Y());
+            return point.validate();
+        } catch {
+            return false;
+        }
+    }
 
-			acc.push(point.X());
+    public getCurve(): EC {
+        return this.curve;
+    }
 
-			acc.push(point.Y());
+    public mul(k: BN): ECPoint {
+        return this.scalarMult(k);
+    }
 
-			return acc;
 
-		}, []);
+    public equals(p2: ECPoint | null): boolean {
+        if (!p2) return false;
+        return this.X().eq(p2.X()) && this.Y().eq(p2.Y());
+    }
 
-	}
+    public setCurve(curve: EC): ECPoint {
+        this.curve = curve;
+        return this;
+    }
 
-	public static unFlattenECPoints(flattenedPoints: BN[], curve: EC): ECPoint[] {
-		const points: ECPoint[] = [];
-		for (let i = 0; i < flattenedPoints.length; i += 2) {
-			points.push(new ECPoint(curve, flattenedPoints[i], flattenedPoints[i + 1]));
-		}
-		return points;
-	}
+    public static flattenECPoints(points: ECPoint[]): BN[] {
+        return points.reduce((acc: BN[], point: ECPoint) => {
+            acc.push(point.X());
+            acc.push(point.Y());
+            return acc;
+        }, []);
+    }
 
+    public static unFlattenECPoints(flattenedPoints: BN[], curve: EC): ECPoint[] {
+        const points: ECPoint[] = [];
+        for (let i = 0; i < flattenedPoints.length; i += 2) {
+            points.push(new ECPoint(curve, flattenedPoints[i], flattenedPoints[i + 1]));
+        }
+        return points;
+    }
 }
 
 function isOnCurve(c: EC, x: BN, y: BN): boolean {
-	if (!x || !y) return false;
-	try {
-		const point = c.curve.point(x, y);
-		return point.validate();
-	} catch {
-		return false;
-	}
+    if (!x || !y) return false;
+    try {
+        const point = c.curve.point(x, y);
+        return point.validate();
+    } catch {
+        return false;
+    }
 }

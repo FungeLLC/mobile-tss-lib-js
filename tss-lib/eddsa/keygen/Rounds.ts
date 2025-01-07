@@ -49,7 +49,7 @@ export abstract class BaseRound {
 
 	protected async getSSID(): Promise<Buffer> {
 		const ssidList = [
-			this.params.ec.p,
+			this.params.ecParams.p,
 			this.params.ec.n,
 			this.params.ec.g.x,
 			this.params.ec.g.y,
@@ -59,6 +59,7 @@ export abstract class BaseRound {
 		];
 
 		const ssid = SHA512_256i(...ssidList);
+		
 		return Buffer.from(ssid.toArray());
 	}
 }

@@ -8,6 +8,9 @@ import { ECPoint } from '../../crypto/ECPoint';
 import BN from 'bn.js';
 
 export class Round4 extends BaseRound implements Round {
+	public number = 4;
+	public ok: boolean[];
+	
 	constructor(
 		protected params: KeygenParams,
 		protected data: LocalPartySaveData,
@@ -16,69 +19,102 @@ export class Round4 extends BaseRound implements Round {
 		protected end: (data: LocalPartySaveData) => void,
 	) {
 		super(params, data, temp, out, end);
-		this.number = 4;
+		this.ok = new Array(params.totalParties).fill(false);
 	}
 
-	public async start(): Promise<TssError | null> {
-		try {
-			if (this.started) {
-				return new TssError('round already started');
-			}
-			this.started = true;
-			this.resetOK();
+    update(msg: ParsedMessage): [boolean, TssError | null] {
+        const fromPIdx = msg.getFrom().arrayIndex;
+        if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+            return [false, new TssError('unexpected message in round 4')];
+        }
 
-			const i = this.params.partyID().index;
-			const ecdsaPub = this.data.eddsaPub;
+        const err = this.handleMessage(msg);
+        if (err) {
+            return [false, err];
+        }
+        
+        if (this.isComplete()) {
+            return [true, null];
+        }
+        
+        return [false, null];
+    }
 
-			if (!ecdsaPub) {
-				return new TssError('ed25519 public key not set');
-			}
+    public async start(): Promise<TssError | null> {
+        try {
+            if (this.started) {
+                return new TssError('round already started');
+            }
+            this.started = true;
 
-			// Final key verification
-			if (!this.verifyFinalKey()) {
-				return new TssError('final key verification failed');
-			}
+            const partyID = this.params.partyID();
+            const arrayIdx = partyID.arrayIndex;
 
-			// End the protocol
-			this.end(this.data);
-			return null;
+            const ecdsaPub = this.data.eddsaPub;
+            if (!ecdsaPub) {
+                return new TssError('ed25519 public key not set');
+            }
 
-		} catch (error) {
-			return new TssError(error instanceof Error ? error.message : String(error));
-		}
-	}
+            // Final key verification
+            if (!this.verifyFinalKey()) {
+                return new TssError('final key verification failed');
+            }
 
-	private verifyFinalKey(): boolean {
-		try {
-			// Verify that our private share generates the expected public key
-			const share = this.data.xi;
-			if (!share) {
-				return false;
-			}
+            this.end(this.data);
+            return null;
 
-			// Generate public key point
-			const pubKeyPoint = ECPoint.scalarBaseMult(
-				this.params.ec.curve,
-				share
-			);
+        } catch (error) {
+            return new TssError(error instanceof Error ? error.message : String(error));
+        }
+    }
 
-			// Point validation specific to Edwards curve
-			if (!pubKeyPoint.isOnCurve()) {
-				return false;
-			}
+    public handleMessage(msg: ParsedMessage): TssError | null {
+        const fromPIdx = msg.getFrom().arrayIndex;
+        if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+            return new TssError('invalid party array index');
+        }
 
-			// Verify it matches the stored public key
-			return this.data.eddsaPub?.equals(pubKeyPoint) ?? false;
+        this.ok[fromPIdx] = true;
+        return null;
+    }
 
-		} catch (error) {
-			console.error('Final key verification failed:', error);
-			return false;
-		}
-	}
+    public isComplete(): boolean {
+        if (!this.started) return false;
+        return this.ok.every(v => v);
+    }
 
-	public update(msg: ParsedMessage): [boolean, TssError | null] {
-		// Round 4 doesn't expect any messages
-		return [false, new TssError('unexpected message in round 4')];
-	}
+    private verifyFinalKey(): boolean {
+        try {
+            // Verify that our private share generates the expected public key
+            const share = this.data.xi;
+            if (!share) {
+                return false;
+            }
+
+            // Generate public key point
+            const pubKeyPoint = ECPoint.scalarBaseMult(
+                this.params.ec.curve,
+                share
+            );
+
+            // Point validation specific to Edwards curve
+            if (!pubKeyPoint.isOnCurve()) {
+                return false;
+            }
+
+            // Verify it matches the stored public key
+            const isEqual = this.data.eddsaPub?.equals(pubKeyPoint) ?? false;
+            if (!isEqual) {
+                console.error('Public key verification failed:', {
+                    expected: this.data.eddsaPub,
+                    actual: pubKeyPoint
+                });
+            }
+            return isEqual;
+
+        } catch (error) {
+            console.error('Final key verification failed:', error);
+            return false;
+        }
+    }
 }
-

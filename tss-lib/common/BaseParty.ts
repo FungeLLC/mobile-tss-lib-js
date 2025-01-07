@@ -33,10 +33,18 @@ class BaseParty {
 
 	public update(party: any, msg: ParsedMessage, taskName: string): [boolean, TssError | null] {
 		try {
+			console.log(`[${taskName}] ${msg.getFrom().index} -> ${this.params.partyID().index}`);
+			if (msg.getFrom().index === this.params.partyID().index) {
+				// ignore message from self to avoid infinite loop
+				return [true, null];
+			}
 			if (!this.validateMessage(msg)) {
 				return [false, new TssError('message validation failed')];
 			}
-
+			if (msg.getFrom().index >= this.params.totalParties) {
+				return [false, new TssError('party index out of bounds')];
+			}
+			console.log(`[${taskName}] Validated ${msg.getFrom().index} -> ${this.params.partyID().index}`);
 			const [ok, err] = party.update(msg);
 			if (!ok || err) {
 				return [false, err];
@@ -81,8 +89,7 @@ class BaseParty {
 	}
 
 	protected wrapError(err: Error, ...culprits: PartyID[]): TssError {
-		return new TssError([err.message, culprits]
-		);
+		return new TssError(`${err.message} - culprits: ${culprits.map(c => c.index).join(', ')}`);
 	}
 
 	protected resetOK(): void {

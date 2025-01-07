@@ -85,15 +85,35 @@ class LocalParty {
 
 
     private async processRound(): Promise<void> {
-        if (this.currentRound.canProceed()) {
-            if (this.currentRound instanceof Round1) {
-                this.currentRound = new Round2(this.params, this.data, this.temp, this.out, this.end);
-            } else if (this.currentRound instanceof Round2) {
-                this.currentRound = new Round3(this.params, this.data, this.temp, this.out, this.end);
-            } else if (this.currentRound instanceof Round3) {
-                this.currentRound = new Round4(this.params, this.data, this.temp, this.out, this.end);
+        console.log(`Processing ${this.currentRound.constructor.name}, canProceed: ${this.currentRound.canProceed()}`);
+        
+        if (!this.currentRound.canProceed()) {
+            return;
+        }
+    
+        let nextRound: Round;
+        if (this.currentRound instanceof Round1) {
+            nextRound = new Round2(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round2) {
+            nextRound = new Round3(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round3) {
+            nextRound = new Round4(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round4) {
+            nextRound = new Round5(this.params, this.data, this.temp, this.out, this.end);
+        } else if (this.currentRound instanceof Round5) {
+            this.isComplete = true;
+            if (!this.data.ecdsaPub) {
+                this.data.ecdsaPub = this.getPublicKey();
             }
-            await this.currentRound.start();
+            return;
+        } else {
+            throw new Error(`Unknown round type: ${this.currentRound.constructor.name}`);
+        }
+    
+        this.currentRound = nextRound;
+        const err = await this.currentRound.start();
+        if (err) {
+            throw err;
         }
     }
     // public start(): TssError | null {

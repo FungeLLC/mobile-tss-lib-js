@@ -1,0 +1,36 @@
+{
+  "tests": [
+    {
+      "name": "single number",
+      "inputs": [
+        "7b"
+      ],
+      "output": "8fa39a1951616afd98ce6aaa8274eaa6d6511726c628ed96f65ebd76a68dfcc"
+    },
+    {
+      "name": "two numbers",
+      "inputs": [
+        "7b",
+        "1c8"
+      ],
+      "output": "87e5c3ea2ce80379df37ea46d5fee513f9bbdb639ef9992f4c9757cfb56a3896"
+    },
+    {
+      "name": "large numbers",
+      "inputs": [
+        "ffffffffffffffff",
+        "ffffffffffffffff"
+      ],
+      "output": "75eee0b2c96f37c8005dd34ffa9c11907d1938612135c4349ad7f4ab24d4e9b2"
+    },
+    {
+      "name": "very large numbers",
+      "inputs": [
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+      ],
+      "output": "ff7a920173f1a657532a2c78646f3e648f492ae477efaff3094c5325275de4e1"
+    }
+  ]
+}

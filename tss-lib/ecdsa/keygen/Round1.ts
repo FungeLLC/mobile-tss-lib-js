@@ -191,22 +191,24 @@ class Round1 extends BaseRound implements Round {
         }
     }
 
-    public update(msg: ParsedMessage): [boolean, TssError | null] {
-        const fromPIdx = msg.getFrom().index;
+    public update(msg: KGRound1Message): [boolean, TssError | null] {
+        // Save the incoming Round1 message
+        this.temp.kgRound1Messages[msg.getFrom().index] = msg;
+        // Mark that we have a Round1 message from that party
+        this.ok[msg.getFrom().index] = true;
 
-        if (fromPIdx >= this.params.totalParties) {
-            return [false, new TssError(`party index out of bounds: ${fromPIdx}`)];
-        }
-
-        if (!(msg instanceof KGRound1Message)) {
-            return [false, new TssError('invalid message type')];
-        }
-
-        this.temp.kgRound1Messages[fromPIdx] = msg;
-        this.ok[fromPIdx] = true;
-
+        // If we have Round1 messages from everyone (or from threshold parties),
+        // canProceed() will be true
         return [true, null];
     }
+
+    public canProceed(): boolean {
+        // For 3 parties, you might want all 3 to be OK in round1
+        // or if threshold is less, adjust accordingly
+        const allHaveSent = this.ok.every(val => val);
+        return allHaveSent && this.started;
+    }
+
 
     private unmarshalDLNProof1(): DLNProof | null {
         try {

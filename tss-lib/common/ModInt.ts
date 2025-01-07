@@ -1,137 +1,179 @@
 import { BigInteger } from 'jsbn';
 import BN from 'bn.js';
 
-type BigIntType = BigInteger | BN ;
+type BigIntType = BigInteger | BN;
 
-class ModInt {
-	private mod: BigIntType;
+interface ReductionContext {
+    m: number;
+    prime: any;
+    [key: string]: any;
+}
 
-	constructor(mod: BigIntType) {
-		this.mod = mod;
-	}
+export class ModInt {
+    private readonly modulus: BN;
+    private reductionContext: BN.ReductionContext | null;
 
-	precomputeWindow(base: BN, windowSize: number): BN[] {
-		const window: BN[] = new Array(1 << windowSize);
-		const modN = this.toBN(this.mod);
-		
-		window[0] = new BN(1).mod(modN);
-		window[1] = base.mod(modN);
-		
-		// Precompute successive powers
-		for (let i = 2; i < (1 << windowSize); i++) {
-			window[i] = window[i-1].mul(base).mod(modN);
-		}
-		
-		return window;
-	}
+    constructor(mod: BN) {
+        this.modulus = mod;
+        this.reductionContext = null;
+    }
 
-	expWindow(base: BN, exp: BN, windowSize: number, window: BN[] = []): BN {
-		const modN = this.toBN(this.mod);
+    private getReductionContext(): BN.ReductionContext {
+        if (!this.reductionContext) {
+            this.reductionContext = BN.mont(this.modulus);
+        }
+        return this.reductionContext;
+    }
 
-		if (exp.isZero()) return new BN(1);
-		if (exp.eqn(1)) return base.mod(modN);
+    public reduce(x: BN): BN {
+        if (x.isNeg()) {
+            return x.umod(this.modulus);
+        }
 
-		const isNegative = exp.isNeg();
-		const expBN = isNegative ? exp.neg() : exp;
+        const red = this.getReductionContext();
+        return x.toRed(red).fromRed();
+    }
 
-		if (window.length === 0) {
-			window = this.precomputeWindow(base, windowSize);
-		}
+    private toBN(value: BigIntType): BN {
+        return BN.isBN(value) ? value : new BN(value.toString(16), 16);
+    }
 
-		let result = new BN(1);
-		const binaryStr = expBN.toString(2);
-		const expBits = binaryStr.padStart(Math.ceil(binaryStr.length / windowSize) * windowSize, '0');
+    add(x: BigIntType, y: BigIntType): BN {
+        const xBN = this.toBN(x);
+        const yBN = this.toBN(y);
 
-		// Process bits from right to left in window-sized chunks
-		for (let i = expBits.length - windowSize; i >= 0; i -= windowSize) {
-			// Get window value
-			let windowValue = parseInt(expBits.slice(i, i + windowSize), 2);
-			result = result.mul(window[windowValue]).mod(modN);
+        // Use reduction if both positive
+        if (xBN.isNeg() || yBN.isNeg()) {
+            return xBN.add(yBN).umod(this.modulus);
+        }
 
-			// Square 'windowSize' times
-			for (let j = 0; j < windowSize; j++) {
-				result = result.sqr().mod(modN);
-			}
-		}
+        const red = this.getReductionContext();
+        return xBN.toRed(red).redAdd(yBN.toRed(red)).fromRed();
+    }
 
-		return isNegative ? result.invm(modN) : result;
-	}
+    mul(x: BigIntType, y: BigIntType): BN {
+        const xBN = this.toBN(x);
+        const yBN = this.toBN(y);
 
+        // Use reduction if both positive
+        if (xBN.isNeg() || yBN.isNeg()) {
+            return xBN.mul(yBN).umod(this.modulus);
+        }
 
-	private toBN(value: BigIntType): BN {
-		return BN.isBN(value) ? value : new BN(value.toString(16), 16);
-	}
+        const red = this.getReductionContext();
+        return xBN.toRed(red).redMul(yBN.toRed(red)).fromRed();
+    }
 
-	private toBigInteger(value: BigIntType): BigInteger {
-		return BN.isBN(value) ? new BigInteger(value.toString(16), 16) : new BigInteger(value.toString(16), 16);
-	}
+    sub(x: BigIntType, y: BigIntType): BN {
+        const xBN = this.toBN(x);
+        const yBN = this.toBN(y);
+        const result = xBN.sub(yBN);
+        return result.umod(this.modulus);
+    }
 
-	add(x: BigIntType, y: BigIntType): BigIntType {
-		const result = this.toBN(x).add(this.toBN(y));
-		return result.mod(this.toBN(this.mod));
-	}
+    div(x: BigIntType, y: BigIntType): BN {
+        const xBN = this.toBN(x);
+        const yBN = this.toBN(y);
+        if (yBN.isZero()) {
+            throw new Error('Division by zero is not allowed');
+        }
+        const yInv = yBN.invm(this.modulus);
+        if (!yInv) throw new Error('No multiplicative inverse exists');
+        const result = xBN.mul(yInv);
+        return result.umod(this.modulus);
+    }
 
-	sub(x: BigIntType, y: BigIntType): BigIntType {
-		const result = this.toBN(x).sub(this.toBN(y));
-		return result.mod(this.toBN(this.mod));
-	}
+    /**
+     * Computes modular exponentiation (base^exponent mod N) using Montgomery reduction
+     * This is the primary method that matches Go's Exp implementation
+     * @param base - The base number
+     * @param exponent - The exponent
+     * @returns base^exponent mod N
+     */
+    public pow(base: BN, exponent: BN): BN {
+        // Ensure base is within [0, modulus)
+        base = base.umod(this.modulus);
 
-	div(x: BigIntType, y: BigIntType): BigIntType {
-		const result = this.toBN(x).div(this.toBN(y));
-		return result.mod(this.toBN(this.mod));
-	}
+        // Handle zero exponent
+        if (exponent.isZero()) {
+            return new BN(1);
+        }
 
-	mul(x: BigIntType, y: BigIntType): BigIntType {
-		const result = this.toBN(x).mul(this.toBN(y));
-		return result.mod(this.toBN(this.mod));
-	}
+        // Use Montgomery reduction for efficient modular exponentiation
+        const redContext = this.getReductionContext();
+        const baseRed = base.toRed(redContext);
+        const resultRed = baseRed.redPow(exponent);
+        const result = resultRed.fromRed();
 
-	exp(x: BigIntType, y: BigIntType): BigIntType {
-		return this.toBN(x).pow(this.toBN(y)).mod(this.toBN(this.mod));
-	}
+        // Ensure result is within [0, modulus)
+        return result.umod(this.modulus);
+    }
 
-	modInverse(g: BigIntType): BigIntType {
-		return this.toBN(g).invm(this.toBN(this.mod));
-	}
+    /** 
+     * @deprecated Use pow() instead - this method exists for backwards compatibility
+     * Alias for pow() that accepts BigIntType inputs
+     */
+    modPow(base: BigIntType, exponent: BigIntType): BN {
+        return this.pow(this.toBN(base), this.toBN(exponent));
+    }
 
-	static isInInterval(b: BigIntType, bound: BigIntType): boolean {
-		const bnB = BN.isBN(b) ? b : new BN(b.toString(16), 16);
-		const bnBound = BN.isBN(bound) ? bound : new BN(bound.toString(16), 16);
-		return bnB.lt(bnBound) && bnB.gte(new BN(0));
-	}
+    /** 
+     * @deprecated Use pow() instead - this method exists for backwards compatibility
+     * Alias for pow() that matches older implementations
+     */
+    exp(base: BN, exponent: BN): BN {
+        return this.pow(base, exponent);
+    }
 
-	static fromByteArray(bytes: Uint8Array): BigIntType {
-		return new BN(bytes);
-	}
+    modInverse(g: BigIntType): BN {
+        const gBN = this.toBN(g);
+        if (gBN.eq(this.modulus) || gBN.isZero()) {
+            throw new Error('No modular inverse exists');
+        }
+        const inv = gBN.invm(this.modulus);
+        if (inv === null) {
+            throw new Error('No modular inverse exists');
+        }
+        return inv;
+    }
 
-	static toByteArray(value: BigIntType): Uint8Array {
+    static isInInterval(b: BigIntType, bound: BigIntType): boolean {
+        const bnB = BN.isBN(b) ? b : new BN(b.toString(16), 16);
+        const bnBound = BN.isBN(bound) ? bound : new BN(bound.toString(16), 16);
+        return bnB.lt(bnBound) && bnB.gte(new BN(0));
+    }
 
-		if (value instanceof Uint8Array) {
-			return value;
-		}
+    static fromByteArray(bytes: Uint8Array): BN {
+        return new BN(bytes);
+    }
 
-		if (value instanceof Number) {
-			value = new BN(value.toString(16), 16);
-		}
+    static toByteArray(value: BigIntType): Uint8Array {
+        if (value instanceof Uint8Array) {
+            return value;
+        }
 
-		if (value instanceof BN) {
-			return new Uint8Array(value.toArray());
-		}
+        if (value instanceof Number) {
+            value = new BN(value.toString(16), 16);
+        }
 
-		if (value instanceof BigInteger) {
-			return new Uint8Array(value.toByteArray());
-		}
+        if (value instanceof BN) {
+            return new Uint8Array(value.toArray());
+        }
 
-		throw new Error('Unsupported type');
-	}
+        if (value instanceof BigInteger) {
+            return new Uint8Array(value.toByteArray());
+        }
 
-	static appendBigIntToBytesSlice(commonBytes: Uint8Array, appended: BigIntType): Uint8Array {
-		const appendedBytes = BN.isBN(appended) ? new Uint8Array(appended.toArray()) : new Uint8Array(this.toByteArray(appended));
-		const resultBytes = new Uint8Array(commonBytes.length + appendedBytes.length);
-		resultBytes.set(commonBytes);
-		resultBytes.set(appendedBytes, commonBytes.length);
-		return resultBytes;
-	}
+        throw new Error('Unsupported type');
+    }
+
+    static appendBigIntToBytesSlice(commonBytes: Uint8Array, appended: BigIntType): Uint8Array {
+        const appendedBytes = BN.isBN(appended) ? new Uint8Array(appended.toArray()) : new Uint8Array(this.toByteArray(appended));
+        const resultBytes = new Uint8Array(commonBytes.length + appendedBytes.length);
+        resultBytes.set(commonBytes);
+        resultBytes.set(appendedBytes, commonBytes.length);
+        return resultBytes;
+    }
 }
 
 export default ModInt;

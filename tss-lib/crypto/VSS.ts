@@ -66,7 +66,7 @@ export function Create(
 		throw new Error("ec.n is undefined");
 	}
 	for (const v of indexes) {
-		const vMod = v.mod(ec.n);
+		const vMod = v.umod(ec.n);
 		if (vMod.isZero()) {
 			throw new Error("party index should not be 0");
 		}
@@ -86,7 +86,28 @@ export function Create(
 	const poly = samplePolynomial(ec, threshold, secret, rand);
 
 	// Generate commitment points
-	const v: Vs = poly.map(ai => ECPoint.scalarBaseMult(ec, ai));
+		if(!ec.n || ec.n === undefined
+			|| ec.n === null
+		) throw new Error('ec.n is undefined');
+		
+	// ensure ai is reduced mod n
+	const modN = new ModInt(ec.n);
+	// Convert polynomial coefficients to curve points
+	const v: Vs = poly.map((ai) => {
+		// First ensure coefficient is properly reduced mod n
+		const scalar = modN.reduce(ai);
+
+		// Then create curve point by scalar multiplication
+		const point = ECPoint.scalarBaseMult(ec, scalar);
+
+		// Verify point is valid
+		if (!point.isOnCurve()) {
+			console.error('Invalid point:', point);
+			throw new Error('Generated point is not on curve');
+		}
+
+		return point;
+	});
 
 	// Generate shares
 	const shares: Shares = indexes.map(id => {
@@ -98,13 +119,32 @@ export function Create(
 }
 
 function samplePolynomial(ec: EC, threshold: number, secret: BN, rand: RandomSource): BN[] {
+	if (!ec.n) throw new Error('ec.n is undefined');
+
+	const modN = new ModInt(ec.n);
 	const v = new Array(threshold + 1);
-	v[0] = secret;
+
+	// Debug raw vs reduced values
+	console.log('Curve order:', ec.n.toString(16));
+
+	// Ensure secret properly reduced
+	const rawSecret = secret.mul(new BN(2)); // Force it to need reduction
+	console.log('Secret:', {
+		raw: rawSecret.toString(16),
+		mod: rawSecret.umod(ec.n).toString(16),
+		reduced: modN.reduce(rawSecret).toString(16)
+	});
+	v[0] = modN.reduce(rawSecret);
+
 	for (let i = 1; i <= threshold; i++) {
-		if(!ec.n) throw new Error('ec.n is undefined');
-		const randInt = getRandomPositiveInt(BigInt(ec.n.toString()));
-		if (!randInt) throw new Error('Failed to generate random integer');
-		v[i] = new BN(randInt.toString());
+		// Generate coefficient larger than n to force reduction
+		const raw = getRandomPositiveInt(ec.n.mul(new BN(2)));
+		console.log(`Coeff ${i}:`, {
+			raw: raw.toString(16),
+			mod: raw.umod(ec.n).toString(16),
+			reduced: modN.reduce(raw).toString(16)
+		});
+		v[i] = modN.reduce(raw);
 	}
 	return v;
 }

@@ -4,6 +4,7 @@ import { ECPoint } from './ECPoint';
 import { SHA512_256 } from '../common/Hash';
 import { getRandomPositiveRelativelyPrimeInt } from '../common/Random';
 import { PaillierPublicKey, PaillierPrivateKey } from '../common/Types';
+import ModInt from '../common/ModInt';
 
 const ProofIters = 13;
 const verifyPrimesUntil = 1000;
@@ -48,13 +49,13 @@ export class PublicKey {
 		}
 		const x = getRandomPositiveRelativelyPrimeInt(this.N) as BN;
 		const N2 = this.NSquare();
-
+		const modN2 = new ModInt(N2);
 		// 1. gamma^m mod N2
-		const Gm = this.gamma().pow(m).mod(N2);
+		const Gm = modN2.pow(this.gamma(), m);
 		// 2. x^N mod N2
-		const xN = x.pow(this.N).mod(N2);
+		const xN = modN2.pow(x, this.N);
 		// 3. (1) * (2) mod N2
-		const c = Gm.mul(xN).mod(N2);
+		const c = modN2.mul(Gm, xN);
 
 		return [c, x];
 	}

@@ -17,17 +17,17 @@ class KGRound2Message1 implements ParsedMessage {
             to: to,
             share: share.toString(16),
             facProof: {
-                p: proof.p.toString(16),
-                q: proof.q.toString(16),
-                a: proof.a.toString(16),
-                b: proof.b.toString(16),
-                t: proof.t.toString(16),
-                sigma: proof.sigma.toString(16),
-                z1: proof.z1.toString(16),
-                z2: proof.z2.toString(16),
-                w1: proof.w1.toString(16),
-                w2: proof.w2.toString(16),
-                v: proof.v.toString(16)
+                p: proof.P.toString(16),
+                q: proof.Q.toString(16),
+                a: proof.A.toString(16),
+                b: proof.B.toString(16),
+                t: proof.T.toString(16),
+                sigma: proof.Sigma.toString(16),
+                z1: proof.Z1.toString(16),
+                z2: proof.Z2.toString(16),
+                w1: proof.W1.toString(16),
+                w2: proof.W2.toString(16),
+                v: proof.V.toString(16)
             }
         };
         this.wireBytes = Buffer.from(JSON.stringify(this.content));

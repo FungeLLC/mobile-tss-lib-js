@@ -1,6 +1,6 @@
 import { MessageFromTss, Round, ParsedMessage, PartyID } from './interfaces';
 import { Commitment } from './interfaces';
-import { KGRound1Message } from './Round1';
+import { BaseRound } from './Rounds';
 import { KGRound2Message1 } from './KGRound2Message1';
 import { KGRound2Message2 } from './KGRound2Message2';
 import { TssError } from '../../common/TssError';
@@ -13,33 +13,118 @@ import { KeygenParams } from './KeygenParams';
 import { Share } from '../../crypto/VSS';
 import { ProofFac } from '../../crypto/FACProof';
 
-class Round2 implements Round {
-    constructor(
-        private params: KeygenParams,
-        private data: LocalPartySaveData,
-        private temp: LocalTempData,
-        private out: (msg: MessageFromTss) => void,
-        private end?: (data: LocalPartySaveData) => void
-    ) { }
+class Round2 extends BaseRound implements Round {
+    public number = 2;
+    private ok1: boolean[];
+    private ok2: boolean[];
 
-    canProceed(): boolean {
-        const expKGRound2Messages1 = this.params.totalParties;
-        const expKGRound2Messages2 = this.params.totalParties;
-        const receivedR2Msgs1 = this.temp.kgRound2Message1s.filter(msg => msg !== undefined).length;
-        const receivedR2Msgs2 = this.temp.kgRound2Message2s.filter(msg => msg !== undefined).length;
-        return receivedR2Msgs1 === expKGRound2Messages1 && receivedR2Msgs2 === expKGRound2Messages2;
+    constructor(
+        protected params: KeygenParams,
+        protected data: LocalPartySaveData,
+        protected temp: LocalTempData,
+        protected out: (msg: MessageFromTss) => void,
+        protected end: (data: LocalPartySaveData) => void,
+    ) {
+        super(params, data, temp, out, end);
+        this.ok1 = new Array(params.totalParties).fill(false);
+        this.ok2 = new Array(params.totalParties).fill(false);
     }
 
-    
-    public begin(): void {
-        const expKGRound2Messages1 = this.params.totalParties;
-        const expKGRound2Messages2 = this.params.totalParties;
+    public canProceed(): boolean {
+        const allOk1 = this.ok1.every(v => v);
+        const allOk2 = this.ok2.every(v => v);
+        return allOk1 && allOk2 && this.started;
+    }
 
-        const receivedR2Msgs1 = this.temp.kgRound2Message1s.filter(msg => msg !== undefined).length;
-        const receivedR2Msgs2 = this.temp.kgRound2Message2s.filter(msg => msg !== undefined).length;
+    public async start(): Promise<TssError | null> {
+        try {
+            if (this.started) {
+                return new TssError('round already started');
+            }
+            this.started = true;
 
-        if (receivedR2Msgs1 === expKGRound2Messages1 && receivedR2Msgs2 === expKGRound2Messages2) {
-            this.endRound();
+            const partyID = this.params.partyID();
+            const arrayIdx = partyID.arrayIndex;
+
+            // Share sending
+            for (let j = 0; j < this.params.totalParties; j++) {
+                const Pj = this.params.parties[j];
+
+                if (!this.temp.shares || !this.temp.shares[j]) {
+                    throw new TssError(`missing share for party ${j}`);
+                }
+
+                const r2msg1 = new KGRound2Message1(
+                    partyID,
+                    Pj,
+                    this.temp.shares[j].share,
+                    {} as ProofFac // No proof needed for EdDSA
+                );
+
+                if (j === arrayIdx) {
+                    // Store own message
+                    this.temp.kgRound2Message1s[j] = r2msg1;
+                    this.ok1[j] = true;
+                    continue;
+                }
+                // Send to other parties
+                this.out(r2msg1);
+            }
+
+            // Broadcast decommitment
+            const r2msg2 = new KGRound2Message2(
+                partyID,
+                { deCommitPolyG: this.temp.deCommitPolyG }
+            );
+            this.temp.kgRound2Message2s[arrayIdx] = r2msg2;
+            this.ok2[arrayIdx] = true;
+            this.out(r2msg2);
+
+            return null;
+        } catch (error) {
+            return new TssError(error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    public update(msg: ParsedMessage): [boolean, TssError | null] {
+        try {
+            const fromParty = msg.getFrom();
+            const fromPIdx = fromParty.arrayIndex;
+
+            // Validate sender's array index
+            if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+                return [false, new TssError('invalid party array index')];
+            }
+
+            if (fromPIdx !== this.params.partyID().arrayIndex) {
+                // Handle message based on type
+                if (msg instanceof KGRound2Message1) {
+
+                    if (this.ok1[fromPIdx]) {
+                        return [false, new TssError('duplicate Round2Message1')];
+                    }
+                    this.temp.kgRound2Message1s[fromPIdx] = msg;
+                    this.ok1[fromPIdx] = true;
+                } else if (msg instanceof KGRound2Message2) {
+
+                    if (this.ok2[fromPIdx]) {
+                        return [false, new TssError('duplicate Round2Message2')];
+                    }
+                    this.temp.kgRound2Message2s[fromPIdx] = msg;
+                    this.ok2[fromPIdx] = true;
+                } else {
+                    return [false, new TssError('unrecognized Round2 message')];
+                }
+
+                    // Check if round complete
+                    if (this.canProceed()) {
+                        this.end(this.data);
+                    }
+                }
+
+            return [true, null];
+        } catch (err) {
+            return [false, new TssError(err instanceof Error ? err.message : String(err))];
         }
     }
 
@@ -53,64 +138,10 @@ class Round2 implements Round {
         }
     }
 
-    
-
-    public async start(): Promise<TssError | null> {
-        try {
-            if (this.temp.started) {
-                return new TssError('round already started');
-            }
-            this.temp.started = true;
-
-            const i = this.params.partyID().index;
-
-            // 5. p2p send share ij to Pj
-            const shares = this.temp.shares;
-            for (let j = 0; j < this.params.totalParties; j++) {
-                const Pj = this.params.parties[j];
-                const r2msg1 = new KGRound2Message1(
-                    Pj,
-                    this.params.partyID(),
-                    shares[j].share,
-                    {} as ProofFac // No proof needed for EdDSA
-                );
-
-                if (j === i) {
-                    this.temp.kgRound2Message1s[j] = r2msg1;
-                    continue;
-                }
-                this.out(r2msg1);
-            }
-
-            // 7. BROADCAST de-commitments of Shamir poly*G
-            const r2msg2 = new KGRound2Message2(
-                this.params.partyID(),
-                { deCommitPolyG: this.temp.deCommitPolyG }
-            );
-            this.temp.kgRound2Message2s[i] = r2msg2;
-            this.out(r2msg2);
-
-            return null;
-        } catch (error) {
-            return new TssError(error instanceof Error ? error.message : String(error));
+    private begin(): void {
+        if (this.canProceed()) {
+            this.endRound();
         }
-    }
-
-    public update(msg: ParsedMessage): [boolean, TssError | null] {
-        const fromPIdx = msg.getFrom().index;
-
-        switch (msg.content().constructor.name) {
-            case 'KGRound2Message1':
-                this.temp.kgRound2Message1s[fromPIdx] = msg.content() as KGRound2Message1;
-                break;
-            case 'KGRound2Message2':
-                this.temp.kgRound2Message2s[fromPIdx] = msg.content() as KGRound2Message2;
-                break;
-            default:
-                return [false, new TssError(`unrecognised message type: ${msg.content().constructor.name}`)];
-        }
-
-        return [true, null];
     }
 
     private endRound(): void {

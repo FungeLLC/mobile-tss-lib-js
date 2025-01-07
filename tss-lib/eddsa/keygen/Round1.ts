@@ -11,49 +11,40 @@ import { getRandomPositiveInt } from '../../common/Random';
 import BN from 'bn.js';
 import * as crypto from 'crypto';
 
-class KGRound1Message implements ParsedMessage {
-
+export class KGRound1Message implements ParsedMessage, MessageFromTss {
     public isBroadcast: boolean;
+    public wireBytes: Uint8Array;
 
     constructor(
-        private from: PartyID,
+        private partyID: PartyID,
         private commitment: Buffer,
-        public wireBytes: Uint8Array
-    ) { 
+    ) {
         this.isBroadcast = true;
+        this.wireBytes = new Uint8Array(this.commitment);
+        this.from = partyID;
     }
-    
-    public marshal(): Uint8Array {
-        const content = this.content();
-        return Buffer.from(JSON.stringify(content));
-    }
-
-    public static unmarshal(bytes: Uint8Array): KGRound1Message {
-        const content = JSON.parse(Buffer.from(bytes).toString());
-        return new KGRound1Message(
-            content.from,
-            Buffer.from(content.commitment, 'hex'),
-            bytes
-        );
-    }
+    from: PartyID;
+    to?: PartyID | undefined;
 
     public getFrom(): PartyID {
-        return this.from;
+        return this.partyID;
     }
 
     public content(): any {
         return {
-            from: this.from,
-            commitment: this.commitment.toString('hex')
+            commitment: this.commitment
         };
     }
 
-    public unmarshalCommitment(): Buffer {
+    public toWire(): Buffer {
         return this.commitment;
     }
 }
 
-class Round1 extends BaseRound implements Round {
+export class Round1 extends BaseRound implements Round {
+    public number = 1;
+    protected ok: boolean[];
+
     constructor(
         protected params: KeygenParams,
         protected data: LocalPartySaveData,
@@ -62,87 +53,101 @@ class Round1 extends BaseRound implements Round {
         protected end: (data: LocalPartySaveData) => void,
     ) {
         super(params, data, temp, out, end);
-        this.number = 1;
+        this.ok = new Array(params.totalParties).fill(false);
     }
 
     public async start(): Promise<TssError | null> {
         if (this.started) {
-            return Promise.resolve(new TssError('round already started'));
+            return new TssError('round already started');
         }
+        
+        const partyID = this.params.partyID();
+        const arrayIdx = partyID.arrayIndex; // Use arrayIndex for array access
+        
         this.started = true;
 
         try {
-            // Calculate partial key share ui
-            const ui = getRandomPositiveInt(this.params.ec.n) as BN;
+            // 1. Calculate partial key share ui using Ed25519 order
+            const ui = getRandomPositiveInt(this.params.ec.n);
+            if (!ui) return new TssError('failed to generate ui');
             this.temp.ui = ui;
 
-            // Generate VSS shares
-            const [vs, shares] = Create(
+            // 2. Generate VSS shares using Ed25519 curve
+            const [vs, shares] = await Create(
                 this.params.threshold,
                 ui,
                 this.params.parties.map(p => p.keyInt()),
-                this.params.ec.curve,
+                this.params.ec,
                 this.params.rand
             );
+
+            if (!vs || !shares) {
+                return new TssError('failed to generate VSS shares');
+            }
 
             // Store VSS data
             this.temp.vs = vs;
             this.temp.shares = shares;
+            this.data.ks = this.params.parties.map(p => p.keyInt());
 
-            // Generate commitments
+            // 3. Generate commitments using Ed25519 points
             const flatPoints = ECPoint.flattenECPoints(vs);
             const commitment = HashCommitment.new(...flatPoints);
 
             // Store commitment data
             this.temp.deCommitPolyG = commitment.D;
-            this.temp.KGCs[this.params.partyID().index] = {
-                value: flatPoints[0],
-                commitment: new Uint8Array(commitment.C.toArray('be', 32)),
-                toBytes: () => new Uint8Array(commitment.C.toArray('be', 32)),
-                verify: (share: BN): boolean => {
-                    const hash = new BN(crypto.createHash('sha256').update(Buffer.from(share.toArray())).digest('hex'), 16);
-                    return flatPoints[0].eq(hash);
-                }
-            };
+            this.data.shareID = this.params.parties[partyID.index-1].keyInt();
 
-            // Broadcast commitment
+            // Initialize message array and create broadcast message
+            this.temp.kgRound1Messages = new Array(this.params.totalParties);
             const msg = new KGRound1Message(
-                this.params.partyID(),
-                commitment.C.toBuffer('be', 32),
-                Buffer.from([])
+                partyID,
+                commitment.C.toBuffer('be', 32)
             );
 
-            this.temp.kgRound1Messages[this.params.partyID().index] = msg;
-            this.out({
-                wireBytes: Buffer.from(JSON.stringify(msg.content())),
-                from: this.params.partyID(),
-                isBroadcast: true,
-                getFrom: () => this.params.partyID(),
-                content: () => msg.content()
-            });
+            this.temp.kgRound1Messages[arrayIdx] = msg;
+            this.ok[arrayIdx] = true;
+            this.out(msg);
 
-            return Promise.resolve(null);
+            return null;
         } catch (error) {
-            return Promise.resolve(new TssError(error instanceof Error ? error.message : String(error)));
+            return new TssError(error instanceof Error ? error.message : String(error));
         }
     }
 
     public update(msg: ParsedMessage): [boolean, TssError | null] {
-        const fromPIdx = msg.getFrom().index;
+        try {
+            const fromParty = msg.getFrom();
+            const fromPIdx = fromParty.arrayIndex;
+            
+            // Validate party index
+            if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+                return [false, new TssError('invalid party array index')];
+            }
 
-        if (fromPIdx >= this.params.totalParties) {
-            return [false, new TssError(`party index out of bounds: ${fromPIdx}`)];
+            // Skip messages from self
+            if (fromPIdx === this.params.partyID().arrayIndex) {
+                return [true, null]; // Successfully ignored self-message
+            }
+
+            // Check for duplicates
+            if (this.ok[fromPIdx]) {
+                return [false, new TssError('duplicate message')];
+            }
+
+            // Store message and mark as received
+            this.temp.kgRound1Messages[fromPIdx] = msg as KGRound1Message;
+            this.ok[fromPIdx] = true;
+            
+            return [true, null];
+        } catch (err) {
+            return [false, new TssError(err instanceof Error ? err.message : String(err))];
         }
+    }
 
-        if (!(msg instanceof KGRound1Message)) {
-            return [false, new TssError('invalid message type')];
-        }
+    public canProceed(): boolean {
+        const allHaveSent = this.ok.every(val => val);
 
-        this.temp.kgRound1Messages[fromPIdx] = msg;
-        this.ok[fromPIdx] = true;
-
-        return [true, null];
+        return allHaveSent && this.started;
     }
 }
-
-export { Round1, KGRound1Message };

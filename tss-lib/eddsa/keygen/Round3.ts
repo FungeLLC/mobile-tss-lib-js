@@ -38,6 +38,8 @@ class KGRound3Message implements ParsedMessage, MessageFromTss {
 
 class Round3 implements Round {
 	private started: boolean = false;
+	private ok: boolean[];
+	public number = 3;
 
 	constructor(
 		private params: KeygenParams,
@@ -45,23 +47,22 @@ class Round3 implements Round {
 		private temp: LocalTempData,
 		private out: (msg: MessageFromTss) => void,
 		private end: (data: LocalPartySaveData) => void
-	) { }
-	canProceed(): boolean {
-		for (let i = 0; i < this.params.totalParties; i++) {
-			if (!this.temp.kgRound2Message1s[i]) return false;
-		}
-		return true;
-	}
-	public handleMessage(_msg: ParsedMessage): TssError | null {
-		return null;
+	) {
+		this.ok = new Array(params.totalParties).fill(false);
 	}
 
-	public isComplete(): boolean {
-		if (!this.started) return false;
+	public canProceed(): boolean {
+		// Check Round2 messages are present
 		for (let i = 0; i < this.params.totalParties; i++) {
-			if (!this.temp.kgRound3Messages[i]) return false;
+			if (!this.temp.kgRound2Message1s[i] || !this.temp.kgRound2Message2s[i]) {
+				return false;
+			}
 		}
 		return true;
+	}
+
+	public handleMessage(_msg: ParsedMessage): TssError | null {
+		return null;
 	}
 
 	public async start(): Promise<TssError | null> {
@@ -71,12 +72,13 @@ class Round3 implements Round {
 			}
 			this.started = true;
 
-			const PIdx = this.params.partyID().index;
+			const partyID = this.params.partyID();
+			const arrayIdx = partyID.arrayIndex;
 
 			// Calculate xi by combining shares
-			let xi = new BN(this.temp.shares[PIdx].share);
+			let xi = new BN(this.temp.shares[arrayIdx].share);
 			for (let j = 0; j < this.params.totalParties; j++) {
-				if (j === PIdx) continue;
+				if (j === arrayIdx) continue;
 				const r2msg1 = this.temp.kgRound2Message1s[j]?.content();
 				if (!r2msg1) {
 					return new TssError(`Missing share from party ${j}`);
@@ -97,8 +99,9 @@ class Round3 implements Round {
 			this.data.eddsaPub = eddsaPub;
 
 			// Broadcast completion message
-			const msg = new KGRound3Message(this.params.partyID());
-			this.temp.kgRound3Messages[PIdx] = msg;
+			const msg = new KGRound3Message(partyID);
+			this.temp.kgRound3Messages[arrayIdx] = msg;
+			this.ok[arrayIdx] = true;
 			this.out(msg);
 
 			return null;
@@ -108,9 +111,35 @@ class Round3 implements Round {
 	}
 
 	public update(msg: ParsedMessage): [boolean, TssError | null] {
-		const fromPIdx = msg.getFrom().index;
-		this.temp.kgRound3Messages[fromPIdx] = msg as KGRound3Message;
-		return [true, null];
+		try {
+			const fromParty = msg.getFrom();
+			const fromPIdx = fromParty.arrayIndex;
+			
+			if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+				return [false, new TssError('invalid party array index')];
+			}
+
+			if (this.ok[fromPIdx]) {
+				return [false, new TssError('duplicate message')];
+			}
+
+			this.temp.kgRound3Messages[fromPIdx] = msg as KGRound3Message;
+			this.ok[fromPIdx] = true;
+
+			if (this.isComplete()) {
+				this.data.eddsaPub = this.temp.vs[0];
+				this.end(this.data);
+			}
+
+			return [true, null];
+		} catch (err) {
+			return [false, new TssError(err instanceof Error ? err.message : String(err))];
+		}
+	}
+
+	public isComplete(): boolean {
+		if (!this.started) return false;
+		return this.ok.every(v => v);
 	}
 }
 

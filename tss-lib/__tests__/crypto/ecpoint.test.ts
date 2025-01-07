@@ -7,7 +7,7 @@ describe('ECPoint Tests', () => {
 	let ec: EC;
 
 	beforeAll(() => {
-		ec = new EC('secp256k1');
+		ec = new EC('ed25519');
 	});
 
 	describe('Point Creation', () => {
@@ -89,4 +89,58 @@ describe('ECPoint Tests', () => {
 			expect(newPoint.isOnCurve()).toBe(true);
 		});
 	});
+});
+
+describe('ECPoint Edwards Curve Tests', () => {
+    let ec: EC;
+    let basePoint: ECPoint;
+
+    beforeAll(() => {
+        // Initialize Ed25519 curve
+        ec = new EC('ed25519');
+        // Create base point without validation (we know G is valid)
+        basePoint = ECPoint.newECPointNoCurveCheck(ec, ec.g.getX(), ec.g.getY());
+    });
+
+    describe('Edwards Point Creation', () => {
+        test('should create valid edwards base point', () => {
+            const point = ECPoint.newECPointNoCurveCheck(ec, ec.g.getX(), ec.g.getY());
+            expect(point.isOnCurve()).toBe(true);
+        });
+
+        test('should handle scalar multiplication result', () => {
+            // 2G = G + G
+            const doubleG = basePoint.scalarMult(new BN(2));
+            expect(doubleG.isOnCurve()).toBe(true);
+        });
+
+        test('should perform point addition', () => {
+            const P = basePoint;
+            const Q = basePoint.scalarMult(new BN(2));
+            const sum = P.add(Q);
+            expect(sum.isOnCurve()).toBe(true);
+        });
+    });
+
+    describe('Point Properties', () => {
+        test('should compare points correctly', () => {
+            const P = ECPoint.newECPointNoCurveCheck(ec, ec.g.getX(), ec.g.getY());
+            const Q = ECPoint.newECPointNoCurveCheck(ec, ec.g.getX(), ec.g.getY());
+            expect(P.equals(Q)).toBe(true);
+        });
+
+        test('should validate curve point', () => {
+            const P = ECPoint.newECPointNoCurveCheck(ec, ec.g.getX(), ec.g.getY());
+            expect(P.isOnCurve()).toBe(true);
+        });
+    });
+
+    describe('Scalar Operations', () => {
+        test('should perform scalar base multiplication', () => {
+            const k = new BN(2);
+            const R = ECPoint.scalarBaseMult(ec, k);
+            const expected = basePoint.scalarMult(k);
+            expect(R.equals(expected)).toBe(true);
+        });
+    });
 });
