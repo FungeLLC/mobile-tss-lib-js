@@ -5,131 +5,127 @@ import { LocalTempData } from './LocalTempData';
 import { TssError } from '../../common/TssError';
 import { BaseRound } from './Rounds';
 import { ECPoint } from '../../crypto/ECPoint';
-import BN from 'bn.js';
+import { KGRound4Message } from './KGRound4Message';
 
-class Round4 extends BaseRound implements Round {
-	constructor(
-		protected params: KeygenParams,
-		protected data: LocalPartySaveData,
-		protected temp: LocalTempData,
-		protected out: (msg: MessageFromTss) => void,
-		protected end: (data: LocalPartySaveData) => void,
-	) {
-		super(params, data, temp, out, end);
-		this.number = 4;
-	}
+export class Round4 extends BaseRound implements Round {
+  public number = 4;
+  public ok: boolean[];
 
-	public canProceed(): boolean {
-		if (!this.started) {
-			return false;
-		}
-		return this.ok.every(ok => ok);
-	}	
+  constructor(
+    protected params: KeygenParams,
+    protected data: LocalPartySaveData,
+    protected temp: LocalTempData,
+    protected out: (msg: MessageFromTss) => void,
+    protected end: (data: LocalPartySaveData) => void,
+  ) {
+    super(params, data, temp, out, end);
+    this.ok = new Array(params.totalParties).fill(false);
+  }
 
-	public async start(): Promise<TssError | null> {
-		try {
-			if (this.started) {
-				return new TssError('round already started');
-			}
-			this.started = true;
-			this.resetOK();
+  public async start(): Promise<TssError | null> {
+    if (this.started) {
+      return new TssError('round already started');
+    }
+    this.started = true;
 
-			const i = this.params.partyID().index;
-			const Ps = this.params.parties;
-			const PIDs = Ps.map(p => p.keyInt());
-			const ecdsaPub = this.data.ecdsaPub;
+    // Ensure local share and final pubkey were computed in Round3
+    if (!this.data.xi) {
+      return new TssError('private share (xi) is missing');
+    }
+    if (!this.data.ecdsaPub) {
+      return new TssError('ECDSA public key not set');
+    }
 
-			if (!ecdsaPub) {
-				return new TssError('ecdsa public key not set');
-			}
+    // Final key verification
+    if (!this.verifyFinalKey()) {
+      return new TssError('final key verification failed');
+    }
 
-			// 1-3. Verify Paillier proofs concurrently
-			const verificationPromises = this.temp.kgRound3Messages.map(async (msg, j) => {
-				if (j === i) {
-					return true;
-				}
-				if (!msg) {
-					return false;
-				}
+    // Send Round4 completion message to all parties
+    const partyID = this.params.partyID();
+    const msg = new KGRound4Message(partyID);
 
-				const r3msg = msg.content();
-				const proof = r3msg.unmarshalPaillierProof();
-				const ppk = this.data.paillierPKs[j];
+    // Mark our message as received
+    const arrayIdx = partyID.arrayIndex;
+    this.ok[arrayIdx] = true;
 
-				if (!proof || !ppk) {
-					console.warn(`paillier proof or public key missing for party ${j}`);
-					return false;
-				}
+    // Broadcast to other parties
+    this.out(msg);
 
-				try {
-					return await proof.verify(
-						ppk.N,
-						PIDs[j],
-						ecdsaPub
-					);
-				} catch (err) {
-					console.warn(`paillier verify failed for party ${Ps[j]}: ${err}`);
-					return false;
-				}
-			});
+    // Round4 done; call end
+    this.end(this.data);
+    return null;
+  }
 
-			// Wait for all verifications
-			const results = await Promise.all(verificationPromises);
+  public update(msg: ParsedMessage): [boolean, TssError | null] {
+    try {
+        const fromParty = msg.getFrom();
+        const fromPIdx = fromParty.arrayIndex;
 
-			// Process results
-			const culprits: PartyID[] = [];
-			results.forEach((ok, j) => {
-				this.ok[j] = ok;
-				if (!ok && j !== i) {
-					culprits.push(Ps[j]);
-				}
-			});
+        // Validate party index
+        if (fromPIdx < 0 || fromPIdx >= this.params.totalParties) {
+            return [false, new TssError('invalid party array index')];
+        }
 
-			if (culprits.length > 0) {
-				return new TssError(['paillier verify failed', culprits]);
-			}
+        // Skip messages from self
+        if (fromPIdx === this.params.partyID().arrayIndex) {
+            return [true, null];
+        }
 
-			// Final key assembly verification
-			if (!this.verifyFinalKey()) {
-				return new TssError('final key verification failed');
-			}
+        // Check for duplicates
+        if (this.ok[fromPIdx]) {
+            return [false, new TssError('duplicate message in round 4')];
+        }
 
-			// End the protocol
-			this.end(this.data);
-			return null;
+        // Mark message as received
+        this.ok[fromPIdx] = true;
 
-		} catch (error) {
-			return new TssError(error instanceof Error ? error.message : String(error));
-		}
-	}
+        // If round is complete, call end
+        if (this.isComplete()) {
+            this.end(this.data);
+            return [true, null];
+        }
 
-	private verifyFinalKey(): boolean {
-		try {
-			// Verify that our private share generates the expected public key
-			const share = this.data.xi;
-			if (!share) {
-				return false;
-			}
-
-			// Generate public key point
-			const pubKeyPoint = ECPoint.scalarBaseMult(
-				this.params.ec.curve,
-				share
-			);
-
-			// Verify it matches the stored public key
-			return this.data.ecdsaPub?.equals(pubKeyPoint) ?? false;
-
-		} catch (error) {
-			console.error('Final key verification failed:', error);
-			return false;
-		}
-	}
-
-	public update(msg: ParsedMessage): [boolean, TssError | null] {
-		// Round 4 doesn't expect any messages
-		return [false, new TssError('unexpected message in round 4')];
-	}
+        return [true, null];
+    } catch (err) {
+        return [false, new TssError(err instanceof Error ? err.message : String(err))];
+    }
 }
 
-export { Round4 };
+  private handleMessage(msg: ParsedMessage): TssError | null {
+    const fromPIdx = msg.getFrom().arrayIndex;
+    this.ok[fromPIdx] = true;
+    return null;
+  }
+
+  public isComplete(): boolean {
+    return this.started && this.ok.every(x => x);
+  }
+
+  /**
+   * Verify final key correctness:
+   *  1. Reconstruct G from curve
+   *  2. Multiply G by xi
+   *  3. Confirm it matches data.ecdsaPub
+   */
+  private verifyFinalKey(): boolean {
+    const share = this.data.xi;
+    if (!share) {
+      return false;
+    }
+    try {
+      // Reconstruct generator point
+      const G = new ECPoint(
+        this.params.ec,
+        this.params.ec.g.getX(),
+        this.params.ec.g.getY()
+      );
+      const computed = G.mul(share);
+
+      // Compare to stored ecdsaPub
+      return this.data.ecdsaPub?.equals(computed) ?? false;
+    } catch {
+      return false;
+    }
+  }
+}

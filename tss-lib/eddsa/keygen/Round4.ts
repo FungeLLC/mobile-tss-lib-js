@@ -93,7 +93,7 @@ export class Round4 extends BaseRound implements Round {
 
             // Generate public key point
             const pubKeyPoint = ECPoint.scalarBaseMult(
-                this.params.ec.curve,
+                this.params.ec,
                 share
             );
 

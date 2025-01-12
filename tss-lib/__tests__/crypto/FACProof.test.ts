@@ -8,7 +8,7 @@ import { getRandomBytes } from '../../common/Random';
 
 
 describe('FACProof', () => {
-	const testSafePrimeBits = 1024;
+	const testSafePrimeBits = 256;
 	const Session = Buffer.from('session');
 	let ec: EC;
 

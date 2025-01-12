@@ -5,6 +5,7 @@ import { LocalTempData } from '../../../eddsa/keygen/LocalTempData';
 import { PartyID } from '../../../eddsa/keygen/interfaces';
 import { ECPoint } from '../../../crypto/ECPoint';
 import BN from 'bn.js';
+import { ec as EC } from 'elliptic';
 
 describe('Round4', () => {
 	let params: KeygenParams;
@@ -24,20 +25,7 @@ describe('Round4', () => {
 				{ index: 2, arrayIndex: 1, keyInt: () => new BN(2) },
 				{ index: 3, arrayIndex: 2, keyInt: () => new BN(3) }
 			],
-			ec: { 
-				n: new BN(7), 
-				curve: { 
-					n: new BN(7),
-					add: jest.fn(), 
-					mul: () => new ECPoint(params.ec.curve, new BN(1), new BN(2)),
-					validate: jest.fn(),
-					point: jest.fn().mockReturnValue({ validate: jest.fn() }),
-					g: { x: new BN(1), y: new BN(1), curve: { validate: () => true, point: () => ({ validate: () => true,
-						getX: () => new BN(1), getY: () => new BN(1) }) } }
-					
-					
-				} 
-			}
+			ec: new EC('ed25519') as EC & { n: BN },
 		} as any;
 		data = new LocalPartySaveData(params.totalParties);
 		temp = new LocalTempData(params.totalParties);
@@ -57,12 +45,12 @@ describe('Round4', () => {
 
 	test('should verify final key successfully', async () => {
 		// Setup mock public key and share
-		data.eddsaPub = new ECPoint(params.ec.curve, new BN(1), new BN(2));
+		data.eddsaPub = new ECPoint(params.ec, params.ec.g.mul(new BN(1)).getX(), params.ec.g.mul(new BN(1)).getY());
 		data.xi = new BN(1);
 
 		// Mock successful key verification
-		const mockPoint = new ECPoint(params.ec.curve, new BN(1), new BN(2));
-		params.ec.curve.g.mul = jest.fn().mockReturnValue(mockPoint);
+		const mockPoint = new ECPoint(params.ec, params.ec.g.mul(new BN(1)).getX(), params.ec.g.mul(new BN(1)).getY());
+		params.ec.g.mul = jest.fn().mockReturnValue(mockPoint);
 		mockPoint.equals = jest.fn().mockReturnValue(true);
 		data.eddsaPub.equals = jest.fn().mockReturnValue(true);
 
@@ -72,11 +60,11 @@ describe('Round4', () => {
 	});
 
 	test('should fail if final key verification fails', async () => {
-		data.eddsaPub = new ECPoint(params.ec.curve, new BN(1), new BN(2));
+		data.eddsaPub = new ECPoint(params.ec, new BN(1), new BN(2));
 		data.xi = new BN(123);
 
 		// Mock failed key verification
-		const mockPoint = new ECPoint(params.ec.curve, new BN(1), new BN(2));
+		const mockPoint = new ECPoint(params.ec, new BN(1), new BN(2));
 		params.ec.curve.g.mul = jest.fn().mockReturnValue(mockPoint);
 		mockPoint.equals = jest.fn().mockReturnValue(false);
 		data.eddsaPub.equals = jest.fn().mockReturnValue(false);

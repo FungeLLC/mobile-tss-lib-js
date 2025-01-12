@@ -144,3 +144,122 @@ describe('ECPoint Edwards Curve Tests', () => {
         });
     });
 });
+
+describe('ECPoint (ECDSA/secp256k1)', () => {
+    let secp256k1: EC;
+    
+    beforeEach(() => {
+        secp256k1 = new EC('secp256k1');
+    });
+
+    describe('Construction', () => {
+        test('should create valid secp256k1 point', () => {
+            const point = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+            expect(point.isValid()).toBe(true);
+        });
+
+        test('should reject invalid curve point', () => {
+            expect(() => {
+                new ECPoint(
+                    secp256k1,
+                    new BN(1),
+                    new BN(1),
+                    true,
+                    'weierstrass'
+                );
+            }).toThrow();
+        });
+    });
+
+    describe('Point Operations', () => {
+        test('should perform scalar multiplication', () => {
+            const G = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+            const scalar = new BN(2);
+            const double = G.mul(scalar);
+            expect(double.isValid()).toBe(true);
+            expect(double.equals(G.add(G))).toBe(true);
+        });
+
+        test('should add points correctly', () => {
+            const G = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+			const P = G.scalarMult(new BN(2));
+			const Q = G.scalarMult(new BN(3));
+			const sum = P.add(G);
+            expect(sum.equals(Q)).toBe(true);
+        });
+
+        test('should perform base point multiplication', () => {
+            const scalar = new BN(5);
+            const point = ECPoint.scalarBaseMult(secp256k1, scalar, 'weierstrass');
+            const expected = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            ).mul(scalar);
+            expect(point.equals(expected)).toBe(true);
+        });
+    });
+
+    describe('Point Validation', () => {
+        test('should detect points at infinity', () => {
+            const G = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+            const n = secp256k1.n as BN;
+            const infinity = G.mul(n);
+            expect(infinity.isInfinity()).toBe(true);
+        });
+
+        test('should validate points on curve', () => {
+            const G = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+            expect(G.isOnCurve()).toBe(true);
+        });
+    });
+
+    describe('Serialization', () => {
+        test('should flatten and unflatten points', () => {
+            const G = new ECPoint(
+                secp256k1,
+                secp256k1.g.getX(),
+                secp256k1.g.getY(),
+                true,
+                'weierstrass'
+            );
+            const points = [G, G.mul(new BN(2))];
+            const flattened = ECPoint.flattenECPoints(points);
+            const restored = ECPoint.unFlattenECPoints(flattened, secp256k1);
+            expect(restored[0].equals(points[0])).toBe(true);
+            expect(restored[1].equals(points[1])).toBe(true);
+        });
+    });
+});

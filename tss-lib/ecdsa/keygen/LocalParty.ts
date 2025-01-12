@@ -7,6 +7,8 @@ import { Round1 } from './Round1';
 import { Round2 } from './Round2';
 import { Round3 } from './Round3';
 import { Round4 } from './Round4';
+import { Round5 } from './Round5';
+
 import { BaseParty } from '../../common/BaseParty';
 import { TssError } from '../../common/TssError';
 import { LocalPreParams } from './LocalPreParams';
@@ -22,6 +24,7 @@ class LocalParty {
     private out: (msg: MessageFromTss) => void;
     private end: (data: LocalPartySaveData) => void;
     private currentRound: Round;
+    private isComplete: boolean = false;
 
     constructor(params: KeygenParams, out: (msg: MessageFromTss) => void, end: (data: LocalPartySaveData) => void, optionalPreParams?: LocalPreParams) {
         const partyCount = params.totalParties;
@@ -133,9 +136,9 @@ class LocalParty {
     }
 
     public validateMessage(msg: ParsedMessage): [boolean, TssError | null] {
-        const [ok, err] = this.baseParty.validateMessage(msg);
-        if (!ok || err) {
-            return [ok, err];
+        const ok = this.baseParty.validateMessage(msg);
+        if (!ok ) {
+            return [ok, new TssError('message validation failed')];
         }
         if (this.params.totalParties - 1 < msg.getFrom().index) {
             return [false, new TssError([`received msg with a sender index too great (${this.params.totalParties} <= ${msg.getFrom().index})`, msg.getFrom()])];

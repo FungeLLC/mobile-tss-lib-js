@@ -44,7 +44,7 @@ export function getRandomPrimeInt(bits: number): BN {
 	}
 	let prime: BN;
 	do {
-		const maxAttempts = 1000;  // Prevent infinite loops
+		const maxAttempts = 1000000;  // Prevent infinite loops
 		let attempts = 0;
 		do {
 			// Generate number with exact bit length and ensure it's odd

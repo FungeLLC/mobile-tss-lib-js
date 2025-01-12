@@ -33,7 +33,7 @@ describe('Round1', () => {
 				threshold: 2,
 			totalParties: 3,
 			partyCount: () => 3,
-			ec: new EC('ed25519').curve,
+			ec: new EC('ed25519') as EC & { n: BN },
 			ecParams: new EC('ed25519').curve,
 			rand: { randomBytes: (size: number) => crypto.randomBytes(size) } as RandomSource
 		};

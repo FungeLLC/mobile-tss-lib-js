@@ -103,7 +103,7 @@ export function Create(
 		// Verify point is valid
 		if (!point.isOnCurve()) {
 			console.error('Invalid point:', point);
-			throw new Error('Generated point is not on curve');
+			throw new Error(`Generated point is not on curve: ${point}`);
 		}
 
 		return point;
@@ -114,6 +114,10 @@ export function Create(
 		const share = evaluatePolynomial(ec, threshold, poly, id);
 		return new Share(threshold, id, share);
 	});
+
+	if (v.length !== threshold + 1) {
+		throw new Error(`Generated vs array length (${v.length}) does not match expected length (${threshold + 1})`);
+	}
 
 	return [v, shares];
 }

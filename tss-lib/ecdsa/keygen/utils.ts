@@ -2,12 +2,6 @@ import { Commitment, Shares, ParsedMessage, PartyID, Share } from './interfaces'
 import BN from 'bn.js';
 import { TssError } from '../../common/TssError';
 
-// Implement utility functions here
-
-export function validateWithProof(): boolean {
-    // Implement validation logic
-    return true;
-}
 
 export function generateCommitment(partyCount: number): Commitment[] {
     const commitments: Commitment[] = [];

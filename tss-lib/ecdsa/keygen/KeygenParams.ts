@@ -7,15 +7,11 @@ import { CurveParams, RandomSource, KeygenConfig } from '../../common/Types';
 class KeygenParams implements Parameters {
 	public readonly totalParties: number;
 	public readonly threshold: number;
-	public readonly ec: CurveParams;
+	public readonly ec: EC & { n: BN };
 	public readonly rand: RandomSource;
-	private partyIDInstance: PartyID;
-	private ecParams: {
-		n: BN;
-		g: any; // elliptic points are untyped in the library
-		curve: EC;
-		p: BN;
-	};
+	public partyIDInstance: PartyID;
+	public ecParams: CurveParams;
+
 	public readonly noProofMod: boolean = false
 	public readonly noProofFac: boolean = false
 	parties: PartyID[];
@@ -26,23 +22,19 @@ class KeygenParams implements Parameters {
 		}
 		this.totalParties = config.partyCount;
 		this.threshold = config.threshold;
-		this.ec = config.curve;
+		this.ec = new EC('secp256k1') as EC & { n: BN };
+
 		this.rand = config.randomSource;
-		this.partyIDInstance = new PartyID(0, 'default');
-		this.ecParams = {
-			n: new BN(0),
-			g: null,
-			curve: new EC('secp256k1'),
-			p: new BN(0)
-		};
+		this.partyIDInstance = new PartyID(1, 'default');
+		this.ecParams = config.curve;
 		this.parties = new Array(this.totalParties);
 		for (let i = 0; i < this.totalParties; i++) {
-			this.parties[i] = new PartyID(i, 'default');
+			this.parties[i] = new PartyID(i + 1, 'default');
 		}
 	}
 
 	partyCount(): number {
-		throw new Error('Method not implemented.');
+		return this.totalParties;
 	}
 
 	public partyID(): PartyID {

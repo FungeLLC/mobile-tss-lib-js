@@ -58,12 +58,17 @@ describe('EdDSA Keygen Integration', () => {
 
 	function generateFacProof(share: Share, ec: EC): ProofFac {
 		// Get curve parameters
-		const { g, n } = ec.curve;
-		const basePoint = new ECPoint(ec.curve, g.getX(), g.getY());
+		const { g, n } = ec;
+		const basePoint = new ECPoint(ec, g.getX(), g.getY());
 		
+		if(!n) {
+			throw new Error('Curve order (n) is not defined');
+		}
+
 		// Share coordinates
 		const x = share.id;
 		const y = share.share;
+
 		
 		// Generate random values for proof
 		const r = generateRandomInt(n);
@@ -153,7 +158,7 @@ describe('EdDSA Keygen Integration', () => {
 			temp.shares = shares;
 
 			// Generate VSS commitments
-			const basePoint = new ECPoint(params.ec.curve, params.ec.g.getX(), params.ec.g.getY());
+			const basePoint = new ECPoint(params.ec, params.ec.g.getX(), params.ec.g.getY());
 			console.log('basePoint type:', typeof basePoint);
 			console.log('basePoint structure:', basePoint);
 			const vs = generateVSSCommitments(polynomial, basePoint);
@@ -211,7 +216,7 @@ describe('EdDSA Keygen Integration', () => {
 			const ui = generateRandomInt(params.ec.n);
 			const polynomial = samplePolynomial(threshold, ui, params.ec.n);
 			const shares = generateShares(polynomial, partyCount, params.ec.n);
-			const basePoint = new ECPoint(params.ec.curve, params.ec.g.getX(), params.ec.g.getY());
+			const basePoint = new ECPoint(params.ec, params.ec.g.getX(), params.ec.g.getY());
 			const vs = generateVSSCommitments(polynomial, basePoint);
 
 			// Setup Round1 state
@@ -270,7 +275,7 @@ describe('EdDSA Keygen Integration', () => {
 			const ui = generateRandomInt(params.ec.n);
 			const polynomial = samplePolynomial(threshold, ui, params.ec.n);
 			const shares = generateShares(polynomial, partyCount, params.ec.n);
-			const basePoint = new ECPoint(params.ec.curve, params.ec.g.getX(), params.ec.g.getY());
+			const basePoint = new ECPoint(params.ec, params.ec.g.getX(), params.ec.g.getY());
 			const vs = generateVSSCommitments(polynomial, basePoint);
 			
 			// Set temporary data
@@ -331,7 +336,7 @@ describe('EdDSA Keygen Integration', () => {
 			// Setup final state with real values
 			const ui = generateRandomInt(params.ec.n);
 			const polynomial = samplePolynomial(threshold, ui, params.ec.n);
-			const basePoint = new ECPoint(params.ec.curve, params.ec.g.getX(), params.ec.g.getY());
+			const basePoint = new ECPoint(params.ec, params.ec.g.getX(), params.ec.g.getY());
 			const vs = generateVSSCommitments(polynomial, basePoint);
 			
 			// Set final data state

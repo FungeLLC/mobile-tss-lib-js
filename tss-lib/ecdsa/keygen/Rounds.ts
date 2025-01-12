@@ -1,19 +1,13 @@
-import { Parameters, PartyID, Round, MessageFromTss, ParsedMessage } from './interfaces';
+import { Parameters, PartyID, Round, MessageFromTss } from './interfaces';
 import { LocalPartySaveData } from './LocalPartySaveData';
 import { LocalTempData } from './LocalTempData';
 import { TssError } from '../../common/TssError';
 import { SHA512_256i } from '../../common/Hash';
 import BN from 'bn.js';
 
+export const TaskName = "ecdsa-keygen";
 
-import { Round1 as Round1Implementation } from './Round1';
-import { Round2 as Round2Implementation } from './Round2';
-import { Round3 as Round3Implementation } from './Round3';
-import { Round4 as Round4Implementation } from './Round4';
-
-const TaskName = "ecdsa-keygen";
-
-class BaseRound {
+export abstract class BaseRound {
 	protected ok: boolean[];
 	protected started: boolean = false;
 	protected number: number = 0;
@@ -69,12 +63,11 @@ class BaseRound {
 	}
 
 	protected async getSSID(): Promise<Buffer> {
-		const ec = this.params.ec;
 		const ssidList = [
-			ec.p,
-			ec.n,
-			ec.g.x,
-			ec.g.y,
+			this.params.ec.curve.p,
+			this.params.ec.n,
+			this.params.ec.g.getX(),
+			this.params.ec.g.getY(),
 			...this.params.parties.map(p => p.keyInt()),
 			new BN(this.number),
 			this.temp.ssidNonce
@@ -85,43 +78,14 @@ class BaseRound {
 	}
 }
 
-class Round1 extends BaseRound implements Round {
-	constructor(...args: ConstructorParameters<typeof BaseRound>) {
-		super(...args);
-		this.number = 1;
-		
-	}
-	update(msg: ParsedMessage): [boolean, TssError | null] {
-		throw new Error('Method not implemented.');
-	}
-}
-
-class Round2 extends Round1 {
-	constructor(...args: ConstructorParameters<typeof BaseRound>) {
-		super(...args);
-		this.number = 2;
-	}
-}
-
-class Round3 extends Round2 {
-	constructor(...args: ConstructorParameters<typeof BaseRound>) {
-		super(...args);
-		this.number = 3;
-	}
-}
-
-class Round4 extends Round3 {
-	constructor(...args: ConstructorParameters<typeof BaseRound>) {
-		super(...args);
-		this.number = 4;
-	}
-}
+import { Round1 } from './Round1';
+import { Round2 } from './Round2';
+import { Round3 } from './Round3';
+import { Round4 } from './Round4';
 
 export {
-	BaseRound,
-	Round1Implementation as Round1,
-	Round2Implementation as Round2,
-	Round3Implementation as Round3,
-	Round4Implementation as Round4,
-	TaskName
+	Round1,
+	Round2,
+	Round3,
+	Round4
 };

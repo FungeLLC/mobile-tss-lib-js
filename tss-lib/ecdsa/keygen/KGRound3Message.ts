@@ -12,7 +12,7 @@ class KGRound3Message implements ParsedMessage, MessageFromTss {
 	constructor(from: PartyID, proof: PaillierProof) {
 		this.from = from;
 		this.content = {
-			proof: proof.serialize()
+			proof: JSON.stringify(proof),
 		};
 		// Serialize the content to wireBytes
 		this.wireBytes = Buffer.from(JSON.stringify(this.content));

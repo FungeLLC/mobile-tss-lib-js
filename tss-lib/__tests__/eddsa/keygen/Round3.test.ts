@@ -6,8 +6,9 @@ import { PartyID } from '../../../eddsa/keygen/interfaces';
 import { ECPoint } from '../../../crypto/ECPoint';
 import { Share } from '../../../crypto/VSS';
 import BN from 'bn.js';
+import { ec as EC } from 'elliptic';
 
-describe('Round3', () => {
+describe('Round3 EDDSA', () => {
 	let params: KeygenParams;
 	let data: LocalPartySaveData;
 	let temp: LocalTempData;
@@ -18,24 +19,19 @@ describe('Round3', () => {
 	beforeEach(() => {
 		params = {
 			partyID: () => ({ index: 1, arrayIndex: 0 } as PartyID),
+			partyIDInstance: { index: 1, arrayIndex: 0 } as PartyID,
 			totalParties: 3,
+			partyCount: () => 3,
 			threshold: 2,
 			parties: [
-				{ index: 1, arrayIndex: 0, keyInt: () => new BN(1) },
-				{ index: 2, arrayIndex: 1, keyInt: () => new BN(2) },
-				{ index: 3, arrayIndex: 2, keyInt: () => new BN(3) }
+				{ index: 1, arrayIndex: 0, keyInt: () => new BN(1), moniker: "party1" },
+				{ index: 2, arrayIndex: 1, keyInt: () => new BN(2), moniker: "party2" },
+				{ index: 3, arrayIndex: 2, keyInt: () => new BN(3), moniker: "party3" }
 			],
-			ec: { 
-				n: new BN(7), 
-				curve: { 
-					add: jest.fn(), 
-					mul: jest.fn(),
-					validate: jest.fn(),
-					point: jest.fn().mockReturnValue({ validate: jest.fn() }),
-					g: { x: new BN(1), y: new BN(1), curve: { validate: () => true, point: () => ({ validate: () => true }) } }
-				} 
-			}
-		} as any;
+			ec: new EC('ed25519') as EC & { n: BN },
+			ecParams: new EC('ed25519').curve,
+			rand: { randomBytes: (size: number) => Buffer.alloc(size) }
+		};
 		data = new LocalPartySaveData(params.totalParties);
 		temp = new LocalTempData(params.totalParties);
 		out = jest.fn();
@@ -65,7 +61,7 @@ describe('Round3', () => {
 		expect(error?.message).toBe('invalid party array index');
 	});
 
-	test('should complete round when all messages received', async () => {
+	test('should complete round when all messages received (eddsa)', async () => {
 		// Setup Round2 messages
 		temp.kgRound2Message1s = Array(params.totalParties).fill({
 			content: () => ({
@@ -82,7 +78,7 @@ describe('Round3', () => {
 
 		// Setup VSS data 
 		temp.vs = [
-			new ECPoint(params.ec.curve, new BN(1), new BN(1))
+			new ECPoint(params.ec, params.ec.g.getX(), params.ec.g.getY())
 		];
 
 		await round3.start();

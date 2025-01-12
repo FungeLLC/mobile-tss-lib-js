@@ -6,7 +6,7 @@ import { getRandomPositiveInt, getRandomPositiveRelativelyPrimeInt } from '../co
 import sqrt from 'bn-sqrt';
 
 export class ProofFac {
-  // Proof values similar to Go
+  // For advanced (Paillier-based) proofs
   public P: BN;
   public Q: BN;
   public A: BN;
@@ -19,15 +19,54 @@ export class ProofFac {
   public W2: BN;
   public V: BN;
 
+  /**
+   * Full constructor for advanced proof usage (e.g., Paillier), matching the
+   * 11 fields used in the TSS Go code.
+   */
   constructor(
     P: BN, Q: BN, A: BN, B: BN, T: BN,
     Sigma: BN, Z1: BN, Z2: BN, W1: BN,
     W2: BN, V: BN
   ) {
-    this.P = P; this.Q = Q; this.A = A; this.B = B;
-    this.T = T; this.Sigma = Sigma; this.Z1 = Z1; 
-    this.Z2 = Z2; this.W1 = W1; this.W2 = W2; 
+    this.P = P;
+    this.Q = Q;
+    this.A = A;
+    this.B = B;
+    this.T = T;
+    this.Sigma = Sigma;
+    this.Z1 = Z1;
+    this.Z2 = Z2;
+    this.W1 = W1;
+    this.W2 = W2;
     this.V = V;
+  }
+
+  /**
+   * Simple helper for ECDSA usage, where we only need ephemeralX, ephemeralY,
+   * index, share, and a single response. We fill all other fields with BN(0).
+   */
+  public static fromEcdsaParams(
+    ephemeralX: BN,
+    ephemeralY: BN,
+    index: BN,
+    share: BN,
+    response: BN
+  ): ProofFac {
+    return new ProofFac(
+      // Fill in ephemeral X, ephemeral Y, index, share, response
+      ephemeralX,  
+      ephemeralY,  
+      index,       
+      share,       
+      response,
+      // Zero out the rest
+      new BN(0),  
+      new BN(0),
+      new BN(0),
+      new BN(0),
+      new BN(0),
+      new BN(0)
+    );
   }
 
   public static newProof(

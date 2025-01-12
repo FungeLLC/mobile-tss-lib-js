@@ -172,7 +172,7 @@ class Round2 extends BaseRound implements Round {
             }
 
             // 2. Verify VSS
-            const PjVs = ECPoint.unFlattenECPoints(flatPolyGs, this.params.ec.curve);
+            const PjVs = ECPoint.unFlattenECPoints(flatPolyGs, this.params.ec);
             const share = r2msg1.unmarshalShare();
             const PjShare = new Share(
                 this.params.threshold,
@@ -180,7 +180,7 @@ class Round2 extends BaseRound implements Round {
                 share
             );
 
-            if (!PjShare.verify(this.params.ec.curve, this.params.threshold, PjVs)) {
+            if (!PjShare.verify(this.params.ec, this.params.threshold, PjVs)) {
                 throw new TssError(`VSS verification failed for party ${j}`);
             }
         }

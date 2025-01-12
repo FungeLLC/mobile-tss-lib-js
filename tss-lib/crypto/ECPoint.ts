@@ -8,9 +8,20 @@ export class ECPoint {
     public curve: EC;
 	public curveType: string;
 
-    constructor(curve: EC, X: BN, Y: BN, validate: boolean = true, curveType: string = 'edwards') {
+    constructor(curve: EC, X: BN, Y: BN, validate: boolean = true, curveType: string = '') {
+
         this.curve = curve;
-		this.curveType = curveType;
+
+        if(curveType !== '') {
+		    this.curveType = curveType;
+        } else if (curve.curve.type){
+            this.curveType = curve.curve.type;
+        }else {
+            throw new Error('ECPoint: curveType not provided and curve does not have curveType');
+        }
+
+
+
         if (this.curveType === 'edwards') {
             // Directly use internal representation
 			this.edwardsPoint = curve.g.curve.point(X, Y);
@@ -48,7 +59,11 @@ export class ECPoint {
     }
 
     public isInfinity(): boolean {
-        return this.X().isZero() && this.Y().isZero();
+        if (this.curveType === 'edwards') {
+            return this.edwardsPoint.isInfinity();
+        }
+        const point = this.curve.curve.point(this.X(), this.Y());
+        return point.isInfinity();
     }
 
     public isValid(): boolean {
@@ -64,7 +79,7 @@ export class ECPoint {
         const p1Point = this.curve.curve.point(this.X(), this.Y());
         const p2Point = this.curve.curve.point(p1.X(), p1.Y());
         const result = p1Point.add(p2Point);
-        return new ECPoint(this.curve, result.getX(), result.getY());
+        return new ECPoint(this.curve, result.getX(), result.getY(), false, 'weierstrass');
     }
 
     public scalarMult(k: BN): ECPoint {
@@ -77,25 +92,33 @@ export class ECPoint {
         // Weierstrass
         const point = this.curve.curve.point(this.X(), this.Y());
         const mulResult = point.mul(reduced);
-        return new ECPoint(this.curve, mulResult.getX(), mulResult.getY());
+
+        if (mulResult.isInfinity()) {
+            return mulResult;
+        }
+
+        return new ECPoint(this.curve, mulResult.getX(), mulResult.getY(), false, 'weierstrass');
     }
 
-    public static scalarBaseMult(curve: EC, k: BN, curveType: string = 'edwards'): ECPoint {
+    public static scalarBaseMult(curve: EC, k: BN, curveType: string = ''): ECPoint {
+        //look at which type of object it is
+        if ( curve.curve.type === 'edwards') {
+            curveType = 'edwards';
+        }else {
+            curveType = 'weierstrass';
+        }
+    
 
         const reduced = k.umod(curve.n as BN);
-        if (curveType === 'edwards') {
-            const result = curve.g.mul(reduced);
-            //if type is point use x, y
-            if(result.getX && result.getY) {
-                return ECPoint.newECPointNoCurveCheck(curve, result.getX(), result.getY());
-            }
-            //if type is ECPoint use X(), Y()
+        const result = curve.g.mul(reduced);
 
-            return ECPoint.newECPointNoCurveCheck(curve, result.X(), result.Y());
+        if (curveType === 'edwards') {
+            const x = typeof result.getX === 'function' ? result.getX() : result.X();
+            const y = typeof result.getY === 'function' ? result.getY() : result.Y();
+            return ECPoint.newECPointNoCurveCheck(curve, x, y);
         }
         // Weierstrass
-        const result = curve.g.mul(reduced);
-        return new ECPoint(curve, result.getX(), result.getY());
+        return new ECPoint(curve, result.getX(), result.getY(), false, 'weierstrass');
     }
 
     public isOnCurve(): boolean {
@@ -107,7 +130,10 @@ export class ECPoint {
         try {
             const point = this.curve.curve.point(this.X(), this.Y());
             return point.validate();
-        } catch {
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                console.debug('Point validation failed:', error.message);
+            }
             return false;
         }
     }

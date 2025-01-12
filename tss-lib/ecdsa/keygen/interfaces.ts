@@ -2,8 +2,9 @@ import BN from 'bn.js';
 import crypto from 'crypto';
 import { ec as EC } from 'elliptic';
 import { PartyID } from '../../common/PartyID';
-import { ParsedMessage } from '../../common/Types';
 import { Shares, Share } from '../../crypto/VSS';
+import { CurveParams, ParsedMessage } from '../../common/Types';
+
 
 class Commitment {
     public value: BN;
@@ -103,12 +104,8 @@ export interface Parameters {
     parties: PartyID[];
     partyID(): PartyID;
     partyCount(): number;
-    ec: {
-        n: BN;
-        g: any; // Elliptic curve point
-        curve: EC;
-        p: BN;
-    };
+    ec: EC;
+    ecParams: CurveParams;
 }
 
 export { LocalPartySaveData, LocalPreParams, ParsedMessage, PartyID, Round, TssError, MessageFromTss, LocalTempData, Commitment, Shares, Share };
